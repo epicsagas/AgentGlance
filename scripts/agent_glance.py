@@ -1,0 +1,521 @@
+#!/usr/bin/env python3
+"""Claude Code status -> GeekMagic SmallTV monitor (SD_RU firmware).
+
+This firmware has no text/DIY-Text API, so we render a 240x240 GIF with
+Pillow and push it into the device's Photo album. The device runs in
+"dedicated status display" mode: Photo theme active, agent_status.gif the
+sole enabled photo.
+
+Driven by Claude Code hooks (reads the hook JSON object from stdin).
+
+  agent_glance.py                          # hook mode: dispatch on hook_event_name
+  agent_glance.py --ip $AGENT_GLANCE_IP     # set device IP (persisted)
+  agent_glance.py --setup                  # take over device (backup + Photo-only)
+  agent_glance.py --restore               # revert device to pre-setup state
+  agent_glance.py --test working|waiting|done [subtitle]
+"""
+import sys, os, json, time, mimetypes, uuid
+import urllib.request, urllib.parse, urllib.error
+from PIL import Image, ImageDraw, ImageFont
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# Persistent state lives in a stable user dir (NOT the install/plugin dir,
+# which is ephemeral). IP/limit come from env vars first; config.json is an
+# optional local fallback.
+STATE_DIR = os.path.expanduser("~/.agent-glance")
+os.makedirs(STATE_DIR, exist_ok=True)
+CONFIG_PATH = os.path.join(STATE_DIR, "config.json")
+BACKUP_PATH = os.path.join(STATE_DIR, "device_backup.json")
+
+TMP_GIF = "/tmp/agent_status.gif"
+THROTTLE_PATH = "/tmp/agent_glance_last.json"
+ERRLOG = "/tmp/agent_glance_error.log"
+
+STATUS_FILE = "agent_status.gif"     # fixed name -> overwrites itself (bounded flash use)
+PHOTO_THEME_ID = 2                # "Фото" theme on SD_RU firmware
+THROTTLE_SEC = 8                  # skip re-push of identical state within this window
+
+
+# ---------------------------------------------------------------- config / http
+def load_config():
+    # Env vars take precedence (portable across machines + plugin installs);
+    # config.json is an optional local fallback for the personal setup.
+    cfg = {"ip": "", "context_limit": 200000}
+    if os.path.exists(CONFIG_PATH):
+        try:
+            cfg.update(json.load(open(CONFIG_PATH)))
+        except Exception:
+            pass
+    if os.environ.get("AGENT_GLANCE_IP"):
+        cfg["ip"] = os.environ["AGENT_GLANCE_IP"]
+    if os.environ.get("AGENT_GLANCE_CONTEXT_LIMIT"):
+        try:
+            cfg["context_limit"] = int(os.environ["AGENT_GLANCE_CONTEXT_LIMIT"])
+        except Exception:
+            pass
+    return cfg
+
+
+def base_url():
+    ip = load_config().get("ip")
+    if not ip:
+        raise RuntimeError("no device IP set (run: agent_glance.py --ip <IP>)")
+    return "http://" + ip.replace("http://", "").rstrip("/")
+
+
+def _get(path, timeout=4):
+    return urllib.request.urlopen(urllib.request.Request(base_url() + path), timeout=timeout).read()
+
+
+def _get_status(path, timeout=4):
+    """Like _get but returns the HTTP status instead of raising on 4xx.
+
+    The firmware answers 403 when a disable would leave zero themes/photos
+    enabled (anti-blank-screen guard). We treat that as soft, not fatal.
+    """
+    try:
+        urllib.request.urlopen(urllib.request.Request(base_url() + path), timeout=timeout)
+        return 200
+    except urllib.error.HTTPError as e:
+        return e.code
+
+
+def _post_multipart(path, field, filepath, timeout=10):
+    boundary = "----cc" + uuid.uuid4().hex
+    data = open(filepath, "rb").read()
+    mime = mimetypes.guess_type(filepath)[0] or "application/octet-stream"
+    body = (
+        f"--{boundary}\r\n".encode()
+        + f'Content-Disposition: form-data; name="{field}"; filename="{os.path.basename(filepath)}"\r\n'.encode()
+        + f"Content-Type: {mime}\r\n\r\n".encode()
+        + data
+        + f"\r\n--{boundary}--\r\n".encode()
+    )
+    req = urllib.request.Request(
+        base_url() + path, data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+    return urllib.request.urlopen(req, timeout=timeout).read()
+
+
+def photo_list():
+    return json.loads(_get("/photo/list"))
+
+
+def theme_list():
+    return json.loads(_get("/theme/list"))
+
+
+def _upload_with_retry(path, field, filepath, retries=3, delay=0.8):
+    """Upload, retrying on transient failures (the ESP8266 returns 403/5xx
+    when busy handling a previous request)."""
+    last = None
+    for _ in range(retries):
+        try:
+            return _post_multipart(path, field, filepath)
+        except Exception as e:
+            last = e
+            time.sleep(delay)
+    raise last
+
+
+def set_photo_enabled(name, state):
+    return _get_status("/photo/toggle?" + urllib.parse.urlencode({"name": name, "state": "1" if state else "0"}))
+
+
+def set_theme_enabled(tid, state):
+    return _get_status("/theme/toggle?" + urllib.parse.urlencode({"id": tid, "state": "1" if state else "0"}))
+
+
+# ---------------------------------------------------------------- rendering
+def _font(size, bold=True, cjk=False):
+    # cjk=True -> prefer a Korean(+Latin) font so Hangul renders instead of tofu.
+    if cjk:
+        cands = [
+            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+            "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
+            "/System/Library/Fonts/Supplemental/Arial.ttf",
+        ]
+    else:
+        cands = [
+            "/System/Library/Fonts/Supplemental/Arial Bold.ttf" if bold
+            else "/System/Library/Fonts/Supplemental/Arial.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+        ]
+    for p in cands:
+        if os.path.exists(p):
+            try:
+                return ImageFont.truetype(p, size)
+            except Exception:
+                pass
+    return ImageFont.load_default()
+
+
+# bg, label color, accent/dot, big word, subtitle default
+STATES = {
+    "working": dict(bg=(22, 34, 64),   fg=(255, 209, 102), label="WORKING",  sub="processing…",     pulse=True),
+    "waiting": dict(bg=(150, 27, 27),  fg=(255, 255, 255), label="APPROVAL", sub="needs your input", pulse=False),
+    "done":    dict(bg=(20, 62, 49),   fg=(120, 230, 150), label="DONE",     sub="idle — ready",     pulse=False),
+}
+
+
+def _wrap(text, font, max_w, draw):
+    lines, cur = [], ""
+    for ch in text:
+        if ch == "\n":
+            lines.append(cur)
+            cur = ""
+            continue
+        trial = cur + ch
+        if draw.textlength(trial, font=font) <= max_w:
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = ch
+    if cur:
+        lines.append(cur)
+    return lines[:2]
+
+
+def detect_host():
+    """Which agent is driving us, for the footer label.
+
+    Each host runs the script out of its own install tree, so the path is a
+    more reliable signal than env vars or event names (UserPromptSubmit and
+    Stop are shared between Claude Code and Codex).
+    """
+    p = os.path.abspath(__file__)
+    for frag, label in (
+        ("/.claude/plugins/", "claude code"),
+        ("/.codex/plugins/", "codex"),
+        ("/.gemini/", "antigravity"),
+        ("/.hermes/", "hermes"),
+    ):
+        if frag in p:
+            return label
+
+    # Not running from an install tree (e.g. a dev checkout). Fall back to
+    # markers the host sets at runtime.
+    #
+    # Only runtime-exclusive names are safe here: users commonly export
+    # HERMES_*/GEMINI_* API keys in their shell profile, so matching on those
+    # prefixes would mislabel every session.
+    if os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_PLUGIN_ROOT"):
+        return "claude code"
+    if os.environ.get("CODEX_SANDBOX") or os.environ.get("CODEX_HOME"):
+        return "codex"
+    return "agent"
+
+
+def project_name(cwd=None):
+    """Project label = basename of the session's working directory."""
+    try:
+        p = os.path.abspath(cwd or os.getcwd())
+        return os.path.basename(p.rstrip("/")) or "-"
+    except Exception:
+        return "-"
+
+
+def _fmt(n):
+    n = int(n or 0)
+    if n >= 1_000_000:
+        return "{:.1f}M".format(n / 1_000_000)
+    if n >= 1000:
+        return "{}k".format(n // 1000)
+    return str(n)
+
+
+def parse_transcript(path):
+    """Pull model + token usage from the session transcript JSONL.
+
+    ctx      = current context fill (last assistant turn's input side)
+    cum_in   = cumulative input-side tokens across the session
+    cum_out  = cumulative output tokens across the session
+    """
+    info = {"model": "-", "ctx": 0, "cum_in": 0, "cum_out": 0}
+    if not path or not os.path.exists(path):
+        return info
+    last_u = None
+    try:
+        with open(path, errors="ignore") as fh:
+            for line in fh:
+                try:
+                    o = json.loads(line)
+                except Exception:
+                    continue
+                m = o.get("message") or {}
+                if m.get("role") != "assistant":
+                    continue
+                u = m.get("usage")
+                if not u:
+                    continue
+                last_u = u
+                info["model"] = m.get("model", info["model"])
+                info["cum_in"] += (u.get("input_tokens", 0)
+                                   + u.get("cache_read_input_tokens", 0)
+                                   + u.get("cache_creation_input_tokens", 0))
+                info["cum_out"] += u.get("output_tokens", 0)
+    except Exception:
+        pass
+    if last_u:
+        info["ctx"] = (last_u.get("input_tokens", 0)
+                       + last_u.get("cache_read_input_tokens", 0)
+                       + last_u.get("cache_creation_input_tokens", 0))
+    return info
+
+
+def render(state, sub=None, info=None, out=TMP_GIF):
+    s = STATES.get(state, STATES["working"])
+    info = info or {}
+    W = H = 240
+    img = Image.new("RGB", (W, H), s["bg"])
+    d = ImageDraw.Draw(img)
+    cx = W // 2
+
+    d.rectangle([0, 0, W, 6], fill=s["fg"])              # top accent bar
+    d.ellipse([cx - 9, 24, cx + 9, 42], fill=s["fg"])    # status dot
+    if s["pulse"]:
+        d.ellipse([cx - 15, 18, cx + 15, 48], outline=s["fg"], width=2)
+
+    d.text((cx, 72), s["label"], font=_font(30, True), fill=s["fg"], anchor="mm")
+
+    sub = (sub or "").strip() or s["sub"]
+    fsub = _font(16, cjk=True)
+    y = 100
+    for ln in _wrap(sub, fsub, 200, d):
+        d.text((cx, y), ln, font=fsub, fill=(235, 235, 235), anchor="mm")
+        y += 19
+
+    d.line([(18, 142), (222, 142)], fill=s["fg"], width=1)
+
+    # ---- metrics footer: model | context bar+% | tokens ----
+    limit = info.get("limit", 200000)
+    ctx = info.get("ctx", 0)
+    pct = min(100, round(ctx / limit * 100)) if limit else 0
+
+    d.text((16, 156), info.get("model", "-"), font=_font(14, True), fill=(215, 215, 215))
+    d.text((224, 156), "{}%".format(pct), font=_font(15, True), fill=s["fg"], anchor="rt")
+
+    # context usage bar
+    d.rectangle([16, 178, 224, 186], fill=(70, 70, 70))
+    d.rectangle([16, 178, 16 + int(208 * pct / 100), 186], fill=s["fg"])
+
+    ftn = _font(13, False)
+    d.text((16, 196), "in {}".format(_fmt(info.get("cum_in", 0))), font=ftn, fill=(185, 185, 185))
+    d.text((cx, 196), "{}/{}".format(_fmt(ctx), _fmt(limit)), font=ftn, fill=(220, 220, 220), anchor="mm")
+    d.text((224, 196), "out {}".format(_fmt(info.get("cum_out", 0))), font=ftn, fill=(185, 185, 185), anchor="rt")
+
+    # footer: "<project> · <host>", project truncated so the pair always fits
+    host = detect_host()
+    proj = info.get("project") or project_name()
+    ffoot = _font(12, cjk=True)
+    while proj and d.textlength("{} · {}".format(proj, host), font=ffoot) > 216:
+        proj = proj[:-1]
+    foot = "{} · {}".format(proj, host) if proj else host
+    d.text((cx, 224), foot, font=ffoot, fill=(150, 150, 150), anchor="mm")
+    img.save(out, "GIF")
+    return out
+
+
+# ---------------------------------------------------------------- push / lifecycle
+def _trim(text, n=40):
+    text = " ".join((text or "").split())
+    return text if len(text) <= n else text[: n - 1] + "…"
+
+
+def push_state(state, sub=None, info=None):
+    """Render + upload a state. Throttles identical re-pushes to spare flash."""
+    key = "{}|{}".format(state, sub or "")
+    now = time.time()
+    try:
+        if os.path.exists(THROTTLE_PATH):
+            prev = json.load(open(THROTTLE_PATH))
+            if prev.get("key") == key and now - prev.get("t", 0) < THROTTLE_SEC:
+                return False  # identical state pushed recently -> skip
+    except Exception:
+        pass
+
+    gif = render(state, sub, info)
+    _upload_with_retry("/photo/upload", "file", gif)
+    set_photo_enabled(STATUS_FILE, True)
+    json.dump({"key": key, "t": now}, open(THROTTLE_PATH, "w"))
+    return True
+
+
+def setup():
+    if not load_config().get("ip"):
+        raise RuntimeError("set IP first: agent_glance.py --ip <IP>")
+
+    backup = {
+        "themes": {t["id"]: t["enabled"] for t in theme_list()["themes"]},
+        "photos": {f["name"]: f["enabled"] for f in photo_list()["files"]},
+    }
+    json.dump(backup, open(BACKUP_PATH, "w"), indent=2)
+
+    # initial screen
+    render("done", "monitor ready")
+    _upload_with_retry("/photo/upload", "file", TMP_GIF)
+
+    # make agent_status.gif the sole enabled photo (it's already uploaded above)
+    set_photo_enabled(STATUS_FILE, True)
+    time.sleep(0.3)
+    for f in photo_list()["files"]:
+        if f["name"] != STATUS_FILE:
+            set_photo_enabled(f["name"], False)
+            time.sleep(0.25)
+
+    # Photo theme = sole active theme. Enable the target FIRST so the device
+    # never sees zero enabled themes (which it rejects with HTTP 403), then
+    # disable the rest. Pauses let the ESP8266 process each request.
+    set_theme_enabled(PHOTO_THEME_ID, True)
+    time.sleep(0.4)
+    for t in theme_list()["themes"]:
+        if t["id"] != PHOTO_THEME_ID:
+            set_theme_enabled(t["id"], False)
+            time.sleep(0.3)
+
+    enabled = [t["id"] for t in theme_list()["themes"] if t["enabled"]]
+    print("setup complete — device is now a Claude status display")
+    print("active theme id:", enabled, "(want [%d])" % PHOTO_THEME_ID)
+    print("restore later with: agent_glance.py --restore")
+
+
+def restore():
+    if not os.path.exists(BACKUP_PATH):
+        raise RuntimeError("no backup found at " + BACKUP_PATH)
+    b = json.load(open(BACKUP_PATH))
+    for tid, en in b["themes"].items():
+        set_theme_enabled(int(tid), en)
+    for name, en in b["photos"].items():
+        set_photo_enabled(name, en)
+    try:
+        _get("/photo/delete?" + urllib.parse.urlencode({"name": STATUS_FILE}))
+    except Exception:
+        pass
+    print("restored — device back to its original themes/photos")
+
+
+# ---------------------------------------------------------------- hook dispatch
+def _devnull_stdio():
+    dn = os.open(os.devnull, os.O_RDWR)
+    for fd in (0, 1, 2):
+        try:
+            os.dup2(dn, fd)
+        except Exception:
+            pass
+
+
+                                                                    # -- host event maps
+# Claude Code and Codex send snake_case `hook_event_name`; Antigravity (agy)
+# sends camelCase `hookEventName` and only supports 5 events (no
+# UserPromptSubmit, no Notification). Codex has no Notification either — its
+# approval event is PermissionRequest.
+EVENT_STATE = {
+    "UserPromptSubmit":  "working",   # claude, codex
+    "PreInvocation":     "working",   # agy (closest thing to "turn started")
+    "Notification":      "waiting",   # claude
+    "PermissionRequest": "waiting",   # codex
+    "Stop":              "done",      # claude, codex, agy
+    "SubagentStop":      "done",      # claude, codex
+}
+
+
+def _norm_event(data):
+    """Return (event, transcript_path) across host payload conventions."""
+    ev = data.get("hook_event_name") or data.get("hookEventName") or ""
+    tp = data.get("transcript_path") or data.get("transcriptPath") or ""
+    return ev, tp
+
+
+def _subtitle_for(ev, data):
+    if ev in ("UserPromptSubmit",):
+        return _trim(data.get("prompt") or data.get("user_prompt") or "", 38)
+    if ev in ("Notification",):
+        return _trim(data.get("message") or "", 38)
+    if ev == "PermissionRequest":
+        return _trim(data.get("tool_name") or "approval needed", 38)
+    if ev == "PreToolUse":                      # agy approval gate
+        return _trim("approval requested", 38)
+    return None
+
+
+def handle_hook():
+    raw = sys.stdin.read()
+    try:
+        data = json.loads(raw) if raw.strip() else {}
+    except Exception:
+        data = {}
+    ev, tp = _norm_event(data)
+
+    state = EVENT_STATE.get(ev)
+    # agy has no approval event; its permission gate surfaces as a PreToolUse
+    # on the ask_permission tool.
+    if state is None and ev == "PreToolUse":
+        tool = (data.get("toolCall") or {}).get("name") or data.get("tool_name") or ""
+        if tool == "ask_permission":
+            state = "waiting"
+    if state is None:
+        return
+
+    info = parse_transcript(tp)
+    info["limit"] = load_config().get("context_limit", 200000)
+    # claude/codex send `cwd`; agy sends `workspacePaths`
+    cwd = data.get("cwd") or (data.get("workspacePaths") or [None])[0]
+    info["project"] = project_name(cwd)
+
+    # Background the upload so the host never blocks on the device.
+    pid = os.fork()
+    if pid == 0:                       # child: detach + push + exit
+        os.setsid()
+        try:
+            _devnull_stdio()
+            push_state(state, _subtitle_for(ev, data), info)
+        except Exception:
+            pass
+        os._exit(0)
+    # parent returns immediately
+
+
+def main():
+    args = sys.argv[1:]
+    if not args:
+        handle_hook()
+        return
+    a = args[0]
+    if a == "--ip" and len(args) > 1:
+        cfg = load_config()
+        cfg["ip"] = args[1]
+        json.dump(cfg, open(CONFIG_PATH, "w"), indent=2)
+        print("device IP saved:", args[1])
+    elif a == "--setup":
+        setup()
+    elif a == "--restore":
+        restore()
+    elif a == "--test":
+        info = None
+        try:
+            import glob
+            tps = sorted(glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl")),
+                         key=os.path.getmtime)
+            if tps:
+                info = parse_transcript(tps[-1])
+                info["limit"] = load_config().get("context_limit", 200000)
+        except Exception:
+            pass
+        push_state(args[1] if len(args) > 1 else "working",
+                   args[2] if len(args) > 2 else None, info)
+        print("pushed:", args[1] if len(args) > 1 else "working")
+    else:
+        print(__doc__)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        try:
+            with open(ERRLOG, "a") as fh:
+                fh.write("{} {}\n".format(time.strftime("%Y-%m-%d %H:%M:%S"), e))
+        except Exception:
+            pass
+    sys.exit(0)  # never block the hook

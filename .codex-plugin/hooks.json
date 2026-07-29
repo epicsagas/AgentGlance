@@ -1,0 +1,41 @@
+{
+  "description": "SmallTV status monitor lifecycle hooks (Codex). Codex has no Notification event — its approval gate is PermissionRequest.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "p=$(ls -d \"$HOME\"/.codex/plugins/cache/epicsagas/AgentGlance/*/scripts/agent_glance.py 2>/dev/null | sort -V | tail -1); [ -n \"$p\" ] && python3 \"$p\"",
+            "timeout": 10,
+            "statusMessage": "SmallTV: working"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "p=$(ls -d \"$HOME\"/.codex/plugins/cache/epicsagas/AgentGlance/*/scripts/agent_glance.py 2>/dev/null | sort -V | tail -1); [ -n \"$p\" ] && python3 \"$p\"",
+            "timeout": 10,
+            "statusMessage": "SmallTV: approval"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "p=$(ls -d \"$HOME\"/.codex/plugins/cache/epicsagas/AgentGlance/*/scripts/agent_glance.py 2>/dev/null | sort -V | tail -1); [ -n \"$p\" ] && python3 \"$p\"",
+            "timeout": 10,
+            "statusMessage": "SmallTV: done"
+          }
+        ]
+      }
+    ]
+  }
+}
