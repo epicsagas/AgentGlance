@@ -6,7 +6,10 @@
 
 [English](../../../README.md) | [한국어](../ko/README.md) | [日本語](../ja/README.md) | **[简体中文](README.md)** | [繁體中文](../zh-Hant/README.md) | [Español](../es/README.md) | [Français](../fr/README.md) | [Deutsch](../de/README.md) | [Português](../pt/README.md) | [Русский](../ru/README.md) | [Italiano](../it/README.md)
 
-# Agent Glance
+<center>
+<img width="320px" src="../../../assets/logo.png" alt="Agent Glance" />
+<h1>Agent Glance</h1>
+</center>
 
 > 把 **GeekMagic SmallTV** 变成一块实时的智能体状态显示屏 —— 适用于 Claude Code、Codex 和 agy。
 
@@ -20,6 +23,11 @@
 | turn finished | ✓ **DONE**(绿色) |
 
 每一帧还会带上 `model · context bar + % · in/out tokens`。
+
+<center>
+<img width="49%" src="../../../assets/claude-approval.jpeg" alter="claude approval">
+<img width="49%" src="../../../assets/claude-done.jpeg" alter="claude approval">
+</center>
 
 ## 环境要求
 

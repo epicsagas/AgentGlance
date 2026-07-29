@@ -6,7 +6,10 @@
 
 [English](../../../README.md) | **[한국어](README.md)** | [日本語](../ja/README.md) | [简体中文](../zh-Hans/README.md) | [繁體中文](../zh-Hant/README.md) | [Español](../es/README.md) | [Français](../fr/README.md) | [Deutsch](../de/README.md) | [Português](../pt/README.md) | [Русский](../ru/README.md) | [Italiano](../it/README.md)
 
-# Agent Glance
+<center>
+<img width="320px" src="../../../assets/logo.png" alt="Agent Glance" />
+<h1>Agent Glance</h1>
+</center>
 
 > **GeekMagic SmallTV**를 실시간 에이전트 상태 디스플레이로 바꿔줍니다 — Claude Code, Codex, agy용.
 
@@ -20,6 +23,11 @@
 | turn finished | ✓ **DONE** (초록색) |
 
 각 화면에는 `model · context bar + % · in/out tokens`도 함께 표시됩니다.
+
+<center>
+<img width="49%" src="../../../assets/claude-approval.jpeg" alter="claude approval">
+<img width="49%" src="../../../assets/claude-done.jpeg" alter="claude approval">
+</center>
 
 ## 요구 사항
 

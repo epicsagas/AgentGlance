@@ -6,7 +6,10 @@
 
 [English](../../../README.md) | [한국어](../ko/README.md) | [日本語](../ja/README.md) | [简体中文](../zh-Hans/README.md) | [繁體中文](../zh-Hant/README.md) | [Español](../es/README.md) | [Français](../fr/README.md) | [Deutsch](../de/README.md) | [Português](../pt/README.md) | **[Русский](README.md)** | [Italiano](../it/README.md)
 
-# Agent Glance
+<center>
+<img width="320px" src="../../../assets/logo.png" alt="Agent Glance" />
+<h1>Agent Glance</h1>
+</center>
 
 > Превращает **GeekMagic SmallTV** в дисплей статуса агента в реальном времени — для Claude Code, Codex и agy.
 
@@ -20,6 +23,11 @@
 | turn finished | ✓ **DONE** (зелёный) |
 
 Каждый кадр также несёт `model · context bar + % · in/out tokens`.
+
+<center>
+<img width="49%" src="../../../assets/claude-approval.jpeg" alter="claude approval">
+<img width="49%" src="../../../assets/claude-done.jpeg" alter="claude approval">
+</center>
 
 ## Требования
 

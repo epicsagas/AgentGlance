@@ -6,7 +6,10 @@
 
 [English](../../../README.md) | [한국어](../ko/README.md) | [日本語](../ja/README.md) | [简体中文](../zh-Hans/README.md) | [繁體中文](../zh-Hant/README.md) | [Español](../es/README.md) | [Français](../fr/README.md) | **[Deutsch](README.md)** | [Português](../pt/README.md) | [Русский](../ru/README.md) | [Italiano](../it/README.md)
 
-# Agent Glance
+<center>
+<img width="320px" src="../../../assets/logo.png" alt="Agent Glance" />
+<h1>Agent Glance</h1>
+</center>
 
 > Verwandelt ein **GeekMagic SmallTV** in eine Live-Statusanzeige für deinen Agenten — für Claude Code, Codex und agy.
 
@@ -20,6 +23,11 @@ Das Killer-Feature ist der rote **APPROVAL**-Bildschirm: Stelle den Agenten auf 
 | turn finished | ✓ **DONE** (grün) |
 
 Jedes Bild zeigt außerdem `model · context bar + % · in/out tokens`.
+
+<center>
+<img width="49%" src="../../../assets/claude-approval.jpeg" alter="claude approval">
+<img width="49%" src="../../../assets/claude-done.jpeg" alter="claude approval">
+</center>
 
 ## Voraussetzungen
 
