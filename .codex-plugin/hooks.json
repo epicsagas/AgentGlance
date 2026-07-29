@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "p=$(ls -d \"$HOME\"/.codex/plugins/cache/epicsagas/AgentGlance/*/scripts/agent_glance.py 2>/dev/null | sort -V | tail -1); [ -n \"$p\" ] && python3 \"$p\"",
+            "command": "p=$(ls -d \"$HOME\"/.codex/plugins/cache/epicsagas/agent-glance/*/scripts/agent_glance.py 2>/dev/null | sort -V | tail -1); [ -n \"$p\" ] && python3 \"$p\"",
             "timeout": 10,
             "statusMessage": "SmallTV: working"
           }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "p=$(ls -d \"$HOME\"/.codex/plugins/cache/epicsagas/AgentGlance/*/scripts/agent_glance.py 2>/dev/null | sort -V | tail -1); [ -n \"$p\" ] && python3 \"$p\"",
+            "command": "p=$(ls -d \"$HOME\"/.codex/plugins/cache/epicsagas/agent-glance/*/scripts/agent_glance.py 2>/dev/null | sort -V | tail -1); [ -n \"$p\" ] && python3 \"$p\"",
             "timeout": 10,
             "statusMessage": "SmallTV: approval"
           }
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "p=$(ls -d \"$HOME\"/.codex/plugins/cache/epicsagas/AgentGlance/*/scripts/agent_glance.py 2>/dev/null | sort -V | tail -1); [ -n \"$p\" ] && python3 \"$p\"",
+            "command": "p=$(ls -d \"$HOME\"/.codex/plugins/cache/epicsagas/agent-glance/*/scripts/agent_glance.py 2>/dev/null | sort -V | tail -1); [ -n \"$p\" ] && python3 \"$p\"",
             "timeout": 10,
             "statusMessage": "SmallTV: done"
           }
