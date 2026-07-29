@@ -13,9 +13,11 @@ Driven by Claude Code hooks (reads the hook JSON object from stdin).
   agent_glance.py --setup                  # take over device (backup + Photo-only)
   agent_glance.py --restore               # revert device to pre-setup state
   agent_glance.py --test working|waiting|done [subtitle]
+  agent_glance.py --flush-queue           # (internal) detached worker: debounce + single upload
 """
-import sys, os, json, time, mimetypes, uuid
+import sys, os, json, time, mimetypes, uuid, subprocess
 import urllib.request, urllib.parse, urllib.error
+from contextlib import contextmanager
 from PIL import Image, ImageDraw, ImageFont
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -27,13 +29,27 @@ os.makedirs(STATE_DIR, exist_ok=True)
 CONFIG_PATH = os.path.join(STATE_DIR, "config.json")
 BACKUP_PATH = os.path.join(STATE_DIR, "device_backup.json")
 
-TMP_GIF = "/tmp/agent_status.gif"
-THROTTLE_PATH = "/tmp/agent_glance_last.json"
-ERRLOG = "/tmp/agent_glance_error.log"
+# Cross-platform scratch dir (use tempfile on Windows; /tmp elsewhere).
+TMP_DIR = os.environ.get("TEMP") or "/tmp"
+TMP_GIF = os.path.join(TMP_DIR, "agent_status.gif")
+THROTTLE_PATH = os.path.join(TMP_DIR, "agent_glance_last.json")
+ERRLOG = os.path.join(TMP_DIR, "agent_glance_error.log")
+# Race-resolution state: events from independent hook processes land here, a
+# single detached worker drains them under a device lock so only the
+# highest-priority, latest state reaches the device.
+QUEUE_PATH = os.path.join(TMP_DIR, "agent_glance_queue.jsonl")
+LOCK_DIR = os.path.join(TMP_DIR, "agent_glance_upload.lock")
+DEBOUNCE_SEC = 0.6   # window to coalesce competing events (Stop vs Notification)
+QUEUE_TTL = 30       # drop queue entries older than this (crash-recovery GC)
 
 STATUS_FILE = "agent_status.gif"     # fixed name -> overwrites itself (bounded flash use)
 PHOTO_THEME_ID = 2                # "Фото" theme on SD_RU firmware
 THROTTLE_SEC = 8                  # skip re-push of identical state within this window
+
+# State precedence: when competing events coalesce in the debounce window, the
+# highest-priority one wins (ties broken by recency). `done` outranks a late
+# `waiting` so the screen never flips back to APPROVAL after a Stop.
+STATE_PRIORITY = {"done": 3, "working": 2, "waiting": 1}
 
 
 # ---------------------------------------------------------------- config / http
@@ -125,6 +141,150 @@ def set_photo_enabled(name, state):
 
 def set_theme_enabled(tid, state):
     return _get_status("/theme/toggle?" + urllib.parse.urlencode({"id": tid, "state": "1" if state else "0"}))
+
+
+# ---------------------------------------------------------------- race resolution
+# Each host fires every hook event in its OWN process, so events can't share
+# in-process state. We serialize device access across processes: events land in
+# a queue file, a single detached worker drains them under a directory-based
+# lock (mkdir is atomic on every OS — no flock/msvcrt needed) and pushes only
+# the winning state. This kills the "done screen overwritten by a late
+# APPROVAL notification" race.
+def _pid_alive(pid):
+    """True if `pid` is an existing process. Best-effort, cross-platform."""
+    if not pid:
+        return False
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            from ctypes import wintypes
+            k32 = ctypes.windll.kernel32
+            SYNCHRONIZE = 0x00100000
+            h = k32.OpenProcess(SYNCHRONIZE, False, int(pid))
+            if not h:
+                return False
+            k32.CloseHandle(h)
+            return True
+        else:
+            os.kill(int(pid), 0)
+            return True
+    except Exception:
+        return False
+
+
+@contextmanager
+def _device_lock(timeout=8.0):
+    """Serialize device access via atomic directory creation.
+
+    Stale locks (owner crashed) are reclaimed after the deadline: the lock dir
+    holds a pidfile so we can confirm the owner is dead before taking over.
+    """
+    pidfile = os.path.join(LOCK_DIR, "owner.pid")
+    deadline = time.time() + timeout
+    acquired = False
+    while True:
+        try:
+            os.mkdir(LOCK_DIR)
+            acquired = True
+            try:
+                with open(pidfile, "w") as fh:
+                    fh.write(str(os.getpid()))
+            except Exception:
+                pass
+            break
+        except FileExistsError:
+            if time.time() > deadline:
+                # Possibly stale — verify owner, then force-clear if dead.
+                owner = None
+                try:
+                    with open(pidfile) as fh:
+                        owner = fh.read().strip()
+                except Exception:
+                    pass
+                if owner and _pid_alive(owner):
+                    # Owner is live but slow; extend and keep waiting a bit.
+                    deadline = time.time() + 2.0
+                    time.sleep(0.2)
+                    continue
+                # Owner gone (or unreadable) -> reclaim stale lock.
+                try:
+                    os.remove(pidfile)
+                except Exception:
+                    pass
+                try:
+                    os.rmdir(LOCK_DIR)
+                except Exception:
+                    pass
+                continue
+            time.sleep(0.15)
+    try:
+        yield
+    finally:
+        if acquired:
+            try:
+                os.remove(pidfile)
+            except Exception:
+                pass
+            try:
+                os.rmdir(LOCK_DIR)
+            except Exception:
+                pass
+
+
+def _enqueue(entry):
+    """Append an event to the cross-process queue. One-line JSON per entry."""
+    with open(QUEUE_PATH, "a") as fh:
+        fh.write(json.dumps(entry) + "\n")
+
+
+def _drain_queue():
+    """Read+clear the queue. Caller must hold _device_lock."""
+    entries = []
+    if os.path.exists(QUEUE_PATH):
+        try:
+            with open(QUEUE_PATH) as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entries.append(json.loads(line))
+                    except Exception:
+                        continue
+            os.remove(QUEUE_PATH)
+        except FileNotFoundError:
+            pass  # another worker already drained — that's fine
+    # Garbage-collect stale entries (crash recovery).
+    now = time.time()
+    return [e for e in entries if now - e.get("ts", now) < QUEUE_TTL]
+
+
+def _resolve_state_key(ev, data):
+    """Map an event to a display state, or None if it shouldn't update."""
+    state = EVENT_STATE.get(ev)
+    # agy has no approval event; its permission gate surfaces as a PreToolUse
+    # on the ask_permission tool.
+    if state is None and ev == "PreToolUse":
+        tool = (data.get("toolCall") or {}).get("name") or data.get("tool_name") or ""
+        if tool == "ask_permission":
+            state = "waiting"
+    return state
+
+
+def _resolve(entries):
+    """Pick the winning entry: highest priority, then most recent (ts, seq)."""
+    if not entries:
+        return None
+    return max(entries, key=lambda e: (
+        STATE_PRIORITY.get(e.get("state"), 0),
+        e.get("ts", 0),
+        e.get("seq", 0),
+    ))
+
+
+def _next_seq():
+    """Monotonic tiebreaker across processes: microsecond clock + pid."""
+    return (time.time(), os.getpid())
 
 
 # ---------------------------------------------------------------- rendering
@@ -342,6 +502,77 @@ def push_state(state, sub=None, info=None):
     return True
 
 
+# ---------------------------------------------------------------- background worker
+def _flush_worker():
+    """Detached: wait out the debounce window, then push ONE winning state.
+
+    Runs without blocking the hook caller. Under _device_lock it drains the
+    queue so only a single render+upload happens per coalesced burst.
+    """
+    time.sleep(DEBOUNCE_SEC)
+    try:
+        with _device_lock():
+            entries = _drain_queue()
+            if not entries:
+                return
+            final = _resolve(entries)
+            if not final:
+                return
+            push_state(final["state"], final.get("sub"), final.get("info"))
+    except Exception as e:
+        try:
+            with open(ERRLOG, "a") as fh:
+                fh.write("{} flush: {}\n".format(time.strftime("%Y-%m-%d %H:%M:%S"), e))
+        except Exception:
+            pass
+
+
+def _unix_detach(fn):
+    """Fork a child that runs fn detached, so the hook caller returns at once."""
+    pid = os.fork()
+    if pid != 0:
+        return                 # parent returns immediately
+    os.setsid()
+    try:
+        _devnull_stdio()
+        fn()
+    except Exception:
+        pass
+    os._exit(0)
+
+
+def _win_detach_flush():
+    """Windows: re-exec ourselves detached with --flush-queue.
+
+    os.fork doesn't exist on Windows, and a daemon thread dies when the hook
+    process exits. A detached subprocess survives to complete the upload.
+    """
+    flags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+    DETACHED = 0x00000008
+    creationflags = flags | DETACHED
+    try:
+        subprocess.Popen(
+            [sys.executable, os.path.abspath(__file__), "--flush-queue"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, close_fds=True,
+            creationflags=creationflags,
+        )
+    except Exception as e:
+        try:
+            with open(ERRLOG, "a") as fh:
+                fh.write("{} win_spawn: {}\n".format(time.strftime("%Y-%m-%d %H:%M:%S"), e))
+        except Exception:
+            pass
+
+
+def _spawn_flush():
+    """Launch the detached flush worker in a platform-appropriate way."""
+    if sys.platform == "win32":
+        _win_detach_flush()
+    else:
+        _unix_detach(_flush_worker)
+
+
 def setup():
     if not load_config().get("ip"):
         raise RuntimeError("set IP first: agent_glance.py --ip <IP>")
@@ -460,9 +691,21 @@ AGY_CONTRACT = {
 }
 
 
-def _emit_agy_contract(ev):
-    """Print the JSON result agy expects for `ev` on stdout."""
-    sys.stdout.write(json.dumps(AGY_CONTRACT.get(ev, {})))
+def _maybe_emit_agy_contract(ev):
+    """agy parses stdout as the event's result; emit the contract so it is
+    satisfied. Claude Code/Codex ignore stdout on these status hooks."""
+    if detect_host() == "antigravity":
+        sys.stdout.write(json.dumps(AGY_CONTRACT.get(ev, {})))
+
+
+def _build_info(data, tp):
+    """Assemble the metrics block pushed with a state (model/tokens/project)."""
+    info = parse_transcript(tp)
+    info["limit"] = load_config().get("context_limit", 200000)
+    # claude/codex send `cwd`; agy sends `workspacePaths`
+    cwd = data.get("cwd") or (data.get("workspacePaths") or [None])[0]
+    info["project"] = project_name(cwd)
+    return info
 
 
 def handle_hook():
@@ -473,37 +716,25 @@ def handle_hook():
         data = {}
     ev, tp = _norm_event(data)
 
-    state = EVENT_STATE.get(ev)
-    # agy has no approval event; its permission gate surfaces as a PreToolUse
-    # on the ask_permission tool.
-    if state is None and ev == "PreToolUse":
-        tool = (data.get("toolCall") or {}).get("name") or data.get("tool_name") or ""
-        if tool == "ask_permission":
-            state = "waiting"
+    state = _resolve_state_key(ev, data)
     if state is None:
+        # Even ignored events must answer agy's output contract.
+        _maybe_emit_agy_contract(ev)
         return
 
-    info = parse_transcript(tp)
-    info["limit"] = load_config().get("context_limit", 200000)
-    # claude/codex send `cwd`; agy sends `workspacePaths`
-    cwd = data.get("cwd") or (data.get("workspacePaths") or [None])[0]
-    info["project"] = project_name(cwd)
-
-    # Background the upload so the host never blocks on the device.
-    pid = os.fork()
-    if pid == 0:                       # child: detach + push + exit
-        os.setsid()
-        try:
-            _devnull_stdio()
-            push_state(state, _subtitle_for(ev, data), info)
-        except Exception:
-            pass
-        os._exit(0)
-    # parent returns immediately
-    # agy parses stdout as the event's result; emit the contract so it is
-    # satisfied. Claude Code/Codex ignore stdout on these status hooks.
-    if detect_host() == "antigravity":
-        _emit_agy_contract(ev)
+    # Enqueue and let a single detached worker coalesce competing events under
+    # a device lock, so the screen reflects the highest-priority, latest state.
+    entry = {
+        "state": state,
+        "sub": _subtitle_for(ev, data),
+        "info": _build_info(data, tp),
+        "ts": time.time(),
+        "seq": _next_seq(),
+        "priority": STATE_PRIORITY.get(state, 0),
+    }
+    _enqueue(entry)
+    _maybe_emit_agy_contract(ev)
+    _spawn_flush()          # detached — caller returns immediately
 
 
 def main():
@@ -535,6 +766,10 @@ def main():
         push_state(args[1] if len(args) > 1 else "working",
                    args[2] if len(args) > 2 else None, info)
         print("pushed:", args[1] if len(args) > 1 else "working")
+    elif a == "--flush-queue":
+        # Internal detached worker entry point (Windows): debounce + single
+        # upload. On Unix this is reached only if invoked directly.
+        _flush_worker()
     else:
         print(__doc__)
 
