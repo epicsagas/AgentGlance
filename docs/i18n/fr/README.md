@@ -33,6 +33,15 @@ Chaque image affiche aussi `model · context bar + % · in/out tokens`.
 </table>
 </div>
 
+## À qui est-ce destiné ?
+
+- **Vous lancez de longues sessions d'agent** — migrations, suites de tests, gros refactors — et vous vérifiez sans cesse le terminal pour voir si c'est fini ou bloqué.
+- **Vous vous éloignez du clavier** — et vous voulez savoir à *l'instant* où l'agent attend votre approbation, pas dix minutes plus tard.
+- **Vous utilisez Claude Code / Codex / agy / hermes** en mode headless et regrettez le retour visuel qu'offrirait un IDE complet.
+- **Vous possédez une GeekMagic SmallTV** qui prend la poussière et vous voulez qu'elle se rende enfin utile.
+
+Si vous êtes déjà revenu au terminal en pensant *"attends, ça fait tout ce temps qu'il m'attend ?"* — c'est pour vous.
+
 ## Prérequis
 
 - Une GeekMagic SmallTV sous firmware communautaire **SD_RU / SD Pro** (ESP8266). Vérification rapide — ceci doit renvoyer du JSON contenant un tableau `files` :

@@ -30,6 +30,15 @@ Each frame also carries `model · context bar + % · in/out tokens`.
 </table>
 </div>
 
+## Who is this for?
+
+- **You run long agent sessions** — migrations, test suites, big refactors — and keep checking the terminal to see if it finished or stalled.
+- **You walk away from the keyboard** — and want to know the *moment* the agent needs your approval, not ten minutes later.
+- **You use Claude Code / Codex / agy / hermes** headlessly and miss the visual feedback a full IDE would give you.
+- **You own a GeekMagic SmallTV** sitting idle and want it to actually pull its weight.
+
+If you've ever alt-tabbed back to a terminal and thought *"wait, has it been waiting on me this whole time?"* — this is for you.
+
 ## Requirements
 
 - A GeekMagic SmallTV running **SD_RU / SD Pro** community firmware (ESP8266). Quick check — this must return JSON with a `files` array:

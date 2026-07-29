@@ -33,6 +33,15 @@ Ogni fotogramma riporta anche `model · context bar + % · in/out tokens`.
 </table>
 </div>
 
+## Per chi è?
+
+- **Lanci sessioni lunghe dell'agente** — migrazioni, suite di test, grandi refactor — e continui a controllare il terminale per capire se ha finito o se è bloccato.
+- **Ti allontani dalla tastiera** — e vuoi sapere l' *istante* in cui l'agente ha bisogno della tua approvazione, non dieci minuti dopo.
+- **Usi Claude Code / Codex / agy / hermes** in modalità headless e ti manca il feedback visivo che darebbe un IDE completo.
+- **Hai una GeekMagic SmallTV** inutilizzata e vuoi che si guadagni da vivere.
+
+Se sei mai tornato al terminale pensando *"aspetta, era tutto questo tempo che mi aspettava?"* — allora è per te.
+
 ## Requisiti
 
 - Una GeekMagic SmallTV con firmware community **SD_RU / SD Pro** (ESP8266). Verifica rapida — questo deve restituire JSON con un array `files`:

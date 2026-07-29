@@ -33,6 +33,15 @@ Cada quadro também traz `model · context bar + % · in/out tokens`.
 </table>
 </div>
 
+## Para quem é isto?
+
+- **Você roda sessões longas do agente** — migrações, suítes de testes, grandes refatorações — e fica conferindo o terminal pra ver se terminou ou travou.
+- **Você se afasta do teclado** — e quer saber no *momento* exato em que o agente precisa da sua aprovação, e não dez minutos depois.
+- **Você usa Claude Code / Codex / agy / hermes** em modo headless e sente falta do feedback visual que uma IDE completa daria.
+- **Você tem uma GeekMagic SmallTV** parada e quer que ela puxe seu peso de verdade.
+
+Se você já voltou pro terminal e pensou *"espera, ele ficou me esperando o tempo todo?"* — isto é pra você.
+
 ## Requisitos
 
 - Uma GeekMagic SmallTV com firmware comunitário **SD_RU / SD Pro** (ESP8266). Verificação rápida — isto deve retornar JSON com um array `files`:

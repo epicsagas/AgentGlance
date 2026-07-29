@@ -33,6 +33,15 @@ Jedes Bild zeigt außerdem `model · context bar + % · in/out tokens`.
 </table>
 </div>
 
+## Für wen ist das?
+
+- **Du führst lange Agenten-Sitzungen aus** — Migrationen, Test-Suites, große Refactorings — und schaust ständig aufs Terminal, ob es fertig ist oder hängt.
+- **Du gehst vom Keyboard weg** — und willst den *Moment* wissen, in dem der Agent deine Zustimmung braucht, nicht erst zehn Minuten später.
+- **Du nutzt Claude Code / Codex / agy / hermes** headless und vermisst das visuelle Feedback einer vollwertigen IDE.
+- **Du hast eine GeekMagic SmallTV**, die ungenutzt herumsteht, und willst, dass sie endlich ihren Teil beiträgt.
+
+Wenn du schon mal zum Terminal zurückgekehrt bist und dachtest *"warte, hat die ganze Zeit auf mich gewartet?"* — dann ist das für dich.
+
 ## Voraussetzungen
 
 - Ein GeekMagic SmallTV mit **SD_RU / SD Pro** Community-Firmware (ESP8266). Schnelltest — dies muss JSON mit einem `files`-Array zurückgeben:
