@@ -424,6 +424,15 @@ def _norm_event(data):
     """Return (event, transcript_path) across host payload conventions."""
     ev = data.get("hook_event_name") or data.get("hookEventName") or ""
     tp = data.get("transcript_path") or data.get("transcriptPath") or ""
+    # agy (Antigravity) does NOT send an event-name key on stdin — it tells the
+    # event apart by which payload field is present. Infer it here so hooks fire.
+    if not ev and detect_host() == "antigravity":
+        if "toolCall" in data or "stepIdx" in data:
+            ev = "PreToolUse"
+        elif "invocationNum" in data or "initialNumSteps" in data:
+            ev = "PreInvocation"
+        elif "executionNum" in data or "terminationReason" in data or "fullyIdle" in data:
+            ev = "Stop"
     return ev, tp
 
 
@@ -437,6 +446,23 @@ def _subtitle_for(ev, data):
     if ev == "PreToolUse":                      # agy approval gate
         return _trim("approval requested", 38)
     return None
+
+
+# agy runs hooks synchronously and parses stdout as a per-event result. Each
+# event has its own contract; emit the minimal no-op payload so agy is satisfied
+# (we never inject steps, block a tool, or force the loop to continue).
+AGY_CONTRACT = {
+    "PreInvocation":  {"injectSteps": []},
+    "PostInvocation": {"injectSteps": [], "terminationBehavior": ""},
+    "PreToolUse":     {"decision": "allow"},
+    "PostToolUse":    {},
+    "Stop":           {"decision": ""},   # non-"continue" lets the agent stop
+}
+
+
+def _emit_agy_contract(ev):
+    """Print the JSON result agy expects for `ev` on stdout."""
+    sys.stdout.write(json.dumps(AGY_CONTRACT.get(ev, {})))
 
 
 def handle_hook():
@@ -474,6 +500,10 @@ def handle_hook():
             pass
         os._exit(0)
     # parent returns immediately
+    # agy parses stdout as the event's result; emit the contract so it is
+    # satisfied. Claude Code/Codex ignore stdout on these status hooks.
+    if detect_host() == "antigravity":
+        _emit_agy_contract(ev)
 
 
 def main():

@@ -2,14 +2,9 @@
   "agent-glance": {
     "PreInvocation": [
       {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$HOME/.gemini/config/plugins/agent-glance/scripts/agent_glance.py\"",
-            "timeout": 10
-          }
-        ],
-        "description": "SmallTV: show WORKING when the model is invoked"
+        "type": "command",
+        "command": "python3 \"$HOME/.gemini/config/plugins/agent-glance/scripts/agent_glance.py\"",
+        "timeout": 10
       }
     ],
     "PreToolUse": [
@@ -21,20 +16,14 @@
             "command": "python3 \"$HOME/.gemini/config/plugins/agent-glance/scripts/agent_glance.py\"",
             "timeout": 10
           }
-        ],
-        "description": "SmallTV: show APPROVAL when the agent asks permission"
+        ]
       }
     ],
     "Stop": [
       {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$HOME/.gemini/config/plugins/agent-glance/scripts/agent_glance.py\"",
-            "timeout": 10
-          }
-        ],
-        "description": "SmallTV: show DONE when the execution loop terminates"
+        "type": "command",
+        "command": "python3 \"$HOME/.gemini/config/plugins/agent-glance/scripts/agent_glance.py\"",
+        "timeout": 10
       }
     ]
   }
