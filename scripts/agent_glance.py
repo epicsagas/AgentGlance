@@ -446,9 +446,11 @@ def parse_transcript(path=None):
                 info["cum_in"] = int(c_in)
                 info["cum_out"] = int(c_out)
                 if c_pct is not None:
-                    info["ctx"] = int(info["limit"] * float(c_pct) / 100)
+                    info["pct"] = int(round(float(c_pct)))
+                    info["ctx"] = int(info["limit"] * info["pct"] / 100)
                 else:
                     info["ctx"] = info["cum_in"] + info["cum_out"]
+                    info["pct"] = min(100, round(info["ctx"] / info["limit"] * 100)) if info["limit"] else 0
                 return info
         except Exception:
             pass
@@ -610,7 +612,7 @@ def render(state, sub=None, info=None, out=TMP_GIF):
     # ---- metrics block: flush to the bottom, generous row spacing ----
     limit = info.get("limit") or resolve_model_context_limit(info.get("model"), load_config().get("context_limit", 200000))
     ctx = info.get("ctx", 0)
-    pct = min(100, round(ctx / limit * 100)) if limit else 0
+    pct = info.get("pct") if info.get("pct") is not None else (min(100, round(ctx / limit * 100)) if limit else 0)
     compacted = info.get("compacted", False)
 
     # token row, flush to the bottom edge
