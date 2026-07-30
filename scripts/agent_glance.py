@@ -517,10 +517,11 @@ def parse_transcript(path=None):
                     source = o.get("source", "")
                     content = o.get("content", "") or ""
                     thinking = o.get("thinking", "") or ""
-                    tool_calls = json.dumps(o.get("tool_calls", [])) if o.get("tool_calls") else ""
+                    t_calls = o.get("tool_calls") or []
 
-                    if "invoke_subagent" in tool_calls or "invoke_subagent" in content:
-                        subagents += 1
+                    for tc in t_calls:
+                        if isinstance(tc, dict) and tc.get("name") in ("invoke_subagent", "define_subagent"):
+                            subagents += 1
 
                     if "Model Selection" in content:
                         for line_c in content.splitlines():
@@ -537,7 +538,8 @@ def parse_transcript(path=None):
                     in_tok = 0
                     out_tok = 0
                     if source == "MODEL":
-                        out_tok = _estimate_tokens(thinking) + _estimate_tokens(content) + _estimate_tokens(tool_calls)
+                        tool_calls_str = json.dumps(t_calls) if t_calls else ""
+                        out_tok = _estimate_tokens(thinking) + _estimate_tokens(content) + _estimate_tokens(tool_calls_str)
                     else:
                         in_tok = _estimate_tokens(content)
 
@@ -546,6 +548,12 @@ def parse_transcript(path=None):
                     info["ctx"] += (in_tok + out_tok)
                 else:
                     m = o.get("message") or {}
+                    m_content = m.get("content") or []
+                    if isinstance(m_content, list):
+                        for block in m_content:
+                            if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") in ("Task", "invoke_subagent"):
+                                subagents += 1
+
                     if m.get("role") != "assistant":
                         continue
                     u = m.get("usage")
