@@ -463,10 +463,8 @@ def parse_transcript(path=None):
                                 if len(parts) > 1:
                                     info["model"] = parts[1].rstrip(".").strip()
 
-                    if stype == "CHECKPOINT" or "{{ CHECKPOINT" in content:
+                    if stype == "CHECKPOINT":
                         info["compacted"] = True
-                        info["ctx"] = _estimate_tokens(content)
-                        continue
 
                     in_tok = 0
                     out_tok = 0
@@ -477,7 +475,6 @@ def parse_transcript(path=None):
 
                     info["cum_in"] += in_tok
                     info["cum_out"] += out_tok
-                    info["ctx"] += (in_tok + out_tok)
                 else:
                     m = o.get("message") or {}
                     if m.get("role") != "assistant":
@@ -501,7 +498,9 @@ def parse_transcript(path=None):
     except Exception:
         pass
 
-    if not is_agy and last_u:
+    if is_agy:
+        info["ctx"] = info["cum_in"] + info["cum_out"]
+    elif last_u:
         info["ctx"] = (last_u.get("input_tokens", 0)
                        + last_u.get("cache_read_input_tokens", 0)
                        + last_u.get("cache_creation_input_tokens", 0))
