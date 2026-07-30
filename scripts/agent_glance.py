@@ -470,27 +470,27 @@ def render(state, sub=None, info=None, out=TMP_GIF):
         d.text((cx, y), ln, font=fsub, fill=(225, 225, 225), anchor="mm")
         y += 16
 
-    # ---- metrics block: moved up as a group, bottom breathing room ----
+    # ---- metrics block: flush to the bottom, generous row spacing ----
     limit = info.get("limit", 200000)
     ctx = info.get("ctx", 0)
     pct = min(100, round(ctx / limit * 100)) if limit else 0
 
-    # token row
+    # token row, flush to the bottom edge
     ftn = _font(12, False)
-    d.text((16, 204), "in {}".format(_fmt(info.get("cum_in", 0))), font=ftn, fill=(185, 185, 185), anchor="lm")
-    d.text((cx, 204), "{}/{}".format(_fmt(ctx), _fmt(limit)), font=ftn, fill=(220, 220, 220), anchor="mm")
-    d.text((224, 204), "out {}".format(_fmt(info.get("cum_out", 0))), font=ftn, fill=(185, 185, 185), anchor="rm")
+    d.text((16, 228), "in {}".format(_fmt(info.get("cum_in", 0))), font=ftn, fill=(185, 185, 185), anchor="lm")
+    d.text((cx, 228), "{}/{}".format(_fmt(ctx), _fmt(limit)), font=ftn, fill=(220, 220, 220), anchor="mm")
+    d.text((224, 228), "out {}".format(_fmt(info.get("cum_out", 0))), font=ftn, fill=(185, 185, 185), anchor="rm")
 
-    # context usage bar (above the token row)
-    d.rectangle([16, 180, 224, 188], fill=(70, 70, 70))
-    d.rectangle([16, 180, 16 + int(208 * pct / 100), 188], fill=s["fg"])
+    # context usage bar (well clear of the token glyphs above it)
+    d.rectangle([16, 200, 224, 208], fill=(70, 70, 70))
+    d.rectangle([16, 200, 16 + int(208 * pct / 100), 208], fill=s["fg"])
 
     # model (left) + context % (right), above the bar
-    d.text((16, 160), info.get("model", "-"), font=_font(13, True), fill=(215, 215, 215), anchor="lm")
-    d.text((224, 160), "{}%".format(pct), font=_font(14, True), fill=s["fg"], anchor="rm")
+    d.text((16, 182), info.get("model", "-"), font=_font(13, True), fill=(215, 215, 215), anchor="lm")
+    d.text((224, 182), "{}%".format(pct), font=_font(14, True), fill=s["fg"], anchor="rm")
 
     # divider capping the whole metrics block
-    d.line([(16, 148), (224, 148)], fill=s["fg"], width=1)
+    d.line([(16, 168), (224, 168)], fill=s["fg"], width=1)
 
     # divider capping the whole metrics block
     d.line([(16, 166), (224, 166)], fill=s["fg"], width=1)
