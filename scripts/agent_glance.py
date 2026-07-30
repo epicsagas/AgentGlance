@@ -15,7 +15,7 @@ Driven by Claude Code hooks (reads the hook JSON object from stdin).
   agent_glance.py --test working|waiting|done [subtitle]
   agent_glance.py --flush-queue           # (internal) detached worker: debounce + single upload
 """
-import sys, os, json, time, mimetypes, uuid, subprocess
+import sys, os, json, time, mimetypes, uuid, subprocess, glob, re
 import urllib.request, urllib.parse, urllib.error
 from contextlib import contextmanager
 from PIL import Image, ImageDraw, ImageFont
@@ -385,17 +385,62 @@ def _fmt(n):
     return str(n)
 
 
-def parse_transcript(path):
-    """Pull model + token usage from the session transcript JSONL.
+MODEL_LIMIT_PATTERNS = [
+    (r"gemini-?2\.[59]-?pro|gemini-?1\.5-?pro|gemini-?2-?pro", 2_000_000),
+    (r"gemini", 1_000_000),
+    (r"claude", 200_000),
+    (r"gpt-4|codex|deepseek|qwen", 128_000),
+    (r"o1|o3", 200_000),
+]
 
-    ctx      = current context fill (last assistant turn's input side)
-    cum_in   = cumulative input-side tokens across the session
-    cum_out  = cumulative output tokens across the session
+
+def resolve_model_context_limit(model_name, fallback_limit=200000):
+    if not model_name or model_name == "-":
+        return fallback_limit
+    m = str(model_name).lower().strip()
+    for pattern, limit in MODEL_LIMIT_PATTERNS:
+        if re.search(pattern, m):
+            return limit
+    return fallback_limit
+
+
+def _estimate_tokens(text):
+    if not text:
+        return 0
+    return max(1, int(len(str(text)) / 3.5))
+
+
+def parse_transcript(path=None):
+    """Pull model + token usage from the session transcript JSONL across hosts.
+
+    ctx       = current context fill
+    cum_in    = cumulative input-side tokens across session
+    cum_out   = cumulative output tokens across session
+    compacted = whether context compaction occurred
+    limit     = resolved model context window ceiling
     """
-    info = {"model": "-", "ctx": 0, "cum_in": 0, "cum_out": 0}
+    fallback_limit = load_config().get("context_limit", 200000)
+    info = {"model": "-", "ctx": 0, "cum_in": 0, "cum_out": 0, "compacted": False, "limit": fallback_limit}
+
     if not path or not os.path.exists(path):
+        candidates = []
+        candidates.extend(glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl")))
+        candidates.extend(glob.glob(os.path.expanduser("~/.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript.jsonl")))
+        candidates.extend(glob.glob(os.path.expanduser("~/.codex/sessions/*/*.jsonl")))
+        candidates.extend(glob.glob(os.path.expanduser("~/.codex/*/*.jsonl")))
+        if candidates:
+            candidates.sort(key=os.path.getmtime)
+            path = candidates[-1]
+        else:
+            return info
+
+    if not os.path.exists(path):
         return info
+
+    is_agy = "antigravity-cli" in path or ".system_generated" in path
+    peak_in = 0
     last_u = None
+
     try:
         with open(path, errors="ignore") as fh:
             for line in fh:
@@ -403,24 +448,68 @@ def parse_transcript(path):
                     o = json.loads(line)
                 except Exception:
                     continue
-                m = o.get("message") or {}
-                if m.get("role") != "assistant":
-                    continue
-                u = m.get("usage")
-                if not u:
-                    continue
-                last_u = u
-                info["model"] = m.get("model", info["model"])
-                info["cum_in"] += (u.get("input_tokens", 0)
-                                   + u.get("cache_read_input_tokens", 0)
-                                   + u.get("cache_creation_input_tokens", 0))
-                info["cum_out"] += u.get("output_tokens", 0)
+
+                if is_agy:
+                    stype = o.get("type", "")
+                    source = o.get("source", "")
+                    content = o.get("content", "") or ""
+                    thinking = o.get("thinking", "") or ""
+                    tool_calls = json.dumps(o.get("tool_calls", [])) if o.get("tool_calls") else ""
+
+                    if "Model Selection" in content:
+                        for line_c in content.splitlines():
+                            if "Model Selection" in line_c:
+                                parts = line_c.split("to ")
+                                if len(parts) > 1:
+                                    info["model"] = parts[1].split(".")[0].strip()
+
+                    if stype == "CHECKPOINT" or "{{ CHECKPOINT" in content:
+                        info["compacted"] = True
+                        info["ctx"] = _estimate_tokens(content)
+                        continue
+
+                    in_tok = 0
+                    out_tok = 0
+                    if source == "MODEL":
+                        out_tok = _estimate_tokens(thinking) + _estimate_tokens(content) + _estimate_tokens(tool_calls)
+                    else:
+                        in_tok = _estimate_tokens(content)
+
+                    info["cum_in"] += in_tok
+                    info["cum_out"] += out_tok
+                    info["ctx"] += (in_tok + out_tok)
+                else:
+                    m = o.get("message") or {}
+                    if m.get("role") != "assistant":
+                        continue
+                    u = m.get("usage")
+                    if not u:
+                        continue
+                    last_u = u
+                    info["model"] = m.get("model", info["model"])
+                    in_side = (u.get("input_tokens", 0)
+                               + u.get("cache_read_input_tokens", 0)
+                               + u.get("cache_creation_input_tokens", 0))
+                    out_side = u.get("output_tokens", 0)
+                    info["cum_in"] += in_side
+                    info["cum_out"] += out_side
+
+                    if peak_in > 10000 and in_side < peak_in * 0.75:
+                        info["compacted"] = True
+                    if in_side > peak_in:
+                        peak_in = in_side
     except Exception:
         pass
-    if last_u:
+
+    if not is_agy and last_u:
         info["ctx"] = (last_u.get("input_tokens", 0)
                        + last_u.get("cache_read_input_tokens", 0)
                        + last_u.get("cache_creation_input_tokens", 0))
+
+    if info["model"] == "-" and is_agy:
+        info["model"] = "Gemini 3.6 Flash"
+
+    info["limit"] = resolve_model_context_limit(info["model"], fallback_limit)
     return info
 
 
@@ -472,9 +561,10 @@ def render(state, sub=None, info=None, out=TMP_GIF):
         y += 22
 
     # ---- metrics block: flush to the bottom, generous row spacing ----
-    limit = info.get("limit", 200000)
+    limit = info.get("limit") or resolve_model_context_limit(info.get("model"), load_config().get("context_limit", 200000))
     ctx = info.get("ctx", 0)
     pct = min(100, round(ctx / limit * 100)) if limit else 0
+    compacted = info.get("compacted", False)
 
     # token row, flush to the bottom edge
     ftn = _font(12, False)
@@ -482,13 +572,20 @@ def render(state, sub=None, info=None, out=TMP_GIF):
     d.text((cx, 228), "{}/{}".format(_fmt(ctx), _fmt(limit)), font=ftn, fill=(220, 220, 220), anchor="mm")
     d.text((224, 228), "out {}".format(_fmt(info.get("cum_out", 0))), font=ftn, fill=(185, 185, 185), anchor="rm")
 
+    # Colors for context bar & percentage (Danger zone: pct >= 85)
+    bar_fg = (255, 120, 50) if pct >= 85 else s["fg"]
+    pct_fg = (255, 140, 60) if pct >= 85 else s["fg"]
+
     # context usage bar (well clear of the token glyphs above it)
     d.rectangle([16, 200, 224, 208], fill=(70, 70, 70))
-    d.rectangle([16, 200, 16 + int(208 * pct / 100), 208], fill=s["fg"])
+    if pct > 0:
+        d.rectangle([16, 200, 16 + int(208 * pct / 100), 208], fill=bar_fg)
 
     # model (left) + context % (right), above the bar
-    d.text((16, 182), info.get("model", "-"), font=_font(13, True), fill=(215, 215, 215), anchor="lm")
-    d.text((224, 182), "{}%".format(pct), font=_font(14, True), fill=s["fg"], anchor="rm")
+    pct_str = "⚡ {}%".format(pct) if (compacted or pct >= 85) else "{}%".format(pct)
+    model_str = info.get("model", "-")
+    d.text((16, 182), model_str, font=_font(13, True), fill=(215, 215, 215), anchor="lm")
+    d.text((224, 182), pct_str, font=_font(14, True), fill=pct_fg, anchor="rm")
 
     # divider capping the whole metrics block
     d.line([(16, 168), (224, 168)], fill=s["fg"], width=1)
@@ -724,7 +821,6 @@ def _maybe_emit_agy_contract(ev):
 def _build_info(data, tp):
     """Assemble the metrics block pushed with a state (model/tokens/project)."""
     info = parse_transcript(tp)
-    info["limit"] = load_config().get("context_limit", 200000)
     # claude/codex send `cwd`; agy sends `workspacePaths`
     cwd = data.get("cwd") or (data.get("workspacePaths") or [None])[0]
     info["project"] = project_name(cwd)
@@ -776,16 +872,7 @@ def main():
     elif a == "--restore":
         restore()
     elif a == "--test":
-        info = None
-        try:
-            import glob
-            tps = sorted(glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl")),
-                         key=os.path.getmtime)
-            if tps:
-                info = parse_transcript(tps[-1])
-                info["limit"] = load_config().get("context_limit", 200000)
-        except Exception:
-            pass
+        info = parse_transcript(None)
         push_state(args[1] if len(args) > 1 else "working",
                    args[2] if len(args) > 2 else None, info)
         print("pushed:", args[1] if len(args) > 1 else "working")
