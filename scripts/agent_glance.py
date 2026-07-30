@@ -456,12 +456,12 @@ def parse_transcript(path=None):
                     thinking = o.get("thinking", "") or ""
                     tool_calls = json.dumps(o.get("tool_calls", [])) if o.get("tool_calls") else ""
 
-                    if "Model Selection" in content:
+                    if stype in ("USER_INPUT", "SYSTEM") and "Model Selection" in content:
                         for line_c in content.splitlines():
-                            if "Model Selection" in line_c:
+                            if line_c.strip().startswith("Model Selection"):
                                 parts = line_c.split("to ")
                                 if len(parts) > 1:
-                                    info["model"] = parts[1].split(".")[0].strip()
+                                    info["model"] = parts[1].rstrip(".").strip()
 
                     if stype == "CHECKPOINT" or "{{ CHECKPOINT" in content:
                         info["compacted"] = True
