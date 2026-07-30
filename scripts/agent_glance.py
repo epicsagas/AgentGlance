@@ -453,7 +453,7 @@ def render(state, sub=None, info=None, out=TMP_GIF):
     flab = _font(26, True)
     label_w = d.textlength(s["label"], font=flab)
     dot_r = 6
-    gap = 7
+    gap = 16
     row_w = dot_r * 2 + gap + label_w          # dot + gap + text
     rx = cx - row_w / 2                         # left edge of the row
     dot_cx = rx + dot_r                         # dot center
