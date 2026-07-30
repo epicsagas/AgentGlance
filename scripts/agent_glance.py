@@ -319,7 +319,7 @@ STATES = {
 }
 
 
-def _wrap(text, font, max_w, draw):
+def _wrap(text, font, max_w, draw, max_lines=2):
     lines, cur = [], ""
     for ch in text:
         if ch == "\n":
@@ -334,7 +334,7 @@ def _wrap(text, font, max_w, draw):
             cur = ch
     if cur:
         lines.append(cur)
-    return lines[:2]
+    return lines[:max_lines]
 
 
 def detect_host():
@@ -466,9 +466,9 @@ def render(state, sub=None, info=None, out=TMP_GIF):
     sub = (sub or "").strip() or s["sub"]
     fsub = _font(13, cjk=True)
     y = 90                                      # margin below the status row
-    for ln in _wrap(sub, fsub, 200, d):
+    for ln in _wrap(sub, fsub, 200, d, max_lines=3):
         d.text((cx, y), ln, font=fsub, fill=(225, 225, 225), anchor="mm")
-        y += 16
+        y += 17
 
     # ---- metrics block: flush to the bottom, generous row spacing ----
     limit = info.get("limit", 200000)
