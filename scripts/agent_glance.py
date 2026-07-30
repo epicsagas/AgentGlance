@@ -272,10 +272,22 @@ def _resolve_state_key(ev, data):
 
 
 def _resolve(entries):
-    """Pick the winning entry: most recent timestamp/seq wins, using priority as tiebreaker."""
+    """Pick the winning entry: most recent timestamp/seq wins, using priority as tiebreaker.
+    Automatically expires stale 'approval' (waiting) entries older than 25 seconds.
+    """
     if not entries:
         return None
-    return max(entries, key=lambda e: (
+    now = time.time()
+    valid = []
+    for e in entries:
+        ts = e.get("ts", 0)
+        state = e.get("state")
+        if state == "waiting" and (now - ts > 25):
+            continue
+        valid.append(e)
+    if not valid:
+        return None
+    return max(valid, key=lambda e: (
         e.get("ts", 0),
         e.get("seq", 0),
         STATE_PRIORITY.get(e.get("state"), 0),
@@ -410,15 +422,8 @@ def _estimate_tokens(text):
     return max(1, int(len(str(text)) / 3.5))
 
 
-def parse_transcript(path=None):
-    """Pull model + token usage from the session transcript JSONL across hosts.
-
-    ctx       = current context fill
-    cum_in    = cumulative input-side tokens across session
-    cum_out   = cumulative output tokens across session
-    compacted = whether context compaction occurred
-    limit     = resolved model context window ceiling
-    """
+def parse_transcript(path=None, cwd=None):
+    """Pull model + token usage from session transcript JSONL across hosts."""
     fallback_limit = load_config().get("context_limit", 200000)
     info = {"model": "-", "ctx": 0, "cum_in": 0, "cum_out": 0, "compacted": False, "limit": fallback_limit}
 
@@ -428,39 +433,52 @@ def parse_transcript(path=None):
         try:
             with open(cache_file) as cf:
                 cache_data = json.load(cf)
-            cw = cache_data.get("context_window") or {}
-            m = cache_data.get("model") or {}
-            c_in = cw.get("total_input_tokens") or cw.get("input_tokens") or 0
-            c_out = cw.get("total_output_tokens") or cw.get("output_tokens") or 0
-            c_pct = cw.get("used_percentage")
-            c_limit = cw.get("context_window_size") or cw.get("max_tokens")
-            c_model = m.get("id") or m.get("display_name")
+            cache_cwd = (cache_data.get("workspace") or {}).get("current_dir") or cache_data.get("cwd")
+            if not cwd or not cache_cwd or os.path.basename(cwd.rstrip("/")) == os.path.basename(cache_cwd.rstrip("/")):
+                cw = cache_data.get("context_window") or {}
+                m = cache_data.get("model") or {}
+                c_in = cw.get("total_input_tokens") or cw.get("input_tokens") or 0
+                c_out = cw.get("total_output_tokens") or cw.get("output_tokens") or 0
+                c_pct = cw.get("used_percentage")
+                c_limit = cw.get("context_window_size") or cw.get("max_tokens")
+                c_model = m.get("id") or m.get("display_name")
 
-            if c_pct is not None or c_in or c_out:
-                if c_model:
-                    info["model"] = str(c_model)
-                if c_limit:
-                    info["limit"] = int(c_limit)
-                else:
-                    info["limit"] = resolve_model_context_limit(info["model"], fallback_limit)
-                info["cum_in"] = int(c_in)
-                info["cum_out"] = int(c_out)
-                if c_pct is not None:
-                    info["pct"] = int(round(float(c_pct)))
-                    info["ctx"] = int(info["limit"] * info["pct"] / 100)
-                else:
-                    info["ctx"] = info["cum_in"] + info["cum_out"]
-                    info["pct"] = min(100, round(info["ctx"] / info["limit"] * 100)) if info["limit"] else 0
-                return info
+                if c_pct is not None or c_in or c_out:
+                    if c_model:
+                        info["model"] = str(c_model)
+                    if c_limit:
+                        info["limit"] = int(c_limit)
+                    else:
+                        info["limit"] = resolve_model_context_limit(info["model"], fallback_limit)
+                    info["cum_in"] = int(c_in)
+                    info["cum_out"] = int(c_out)
+                    if c_pct is not None:
+                        info["pct"] = int(round(float(c_pct)))
+                        info["ctx"] = int(info["limit"] * info["pct"] / 100)
+                    else:
+                        info["ctx"] = info["cum_in"] + info["cum_out"]
+                        info["pct"] = min(100, round(info["ctx"] / info["limit"] * 100)) if info["limit"] else 0
+                    return info
         except Exception:
             pass
 
     if not path or not os.path.exists(path):
         candidates = []
-        candidates.extend(glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl")))
-        candidates.extend(glob.glob(os.path.expanduser("~/.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript.jsonl")))
-        candidates.extend(glob.glob(os.path.expanduser("~/.codex/sessions/*/*.jsonl")))
-        candidates.extend(glob.glob(os.path.expanduser("~/.codex/*/*.jsonl")))
+        proj_name = os.path.basename(cwd.rstrip("/")) if cwd else None
+
+        all_claude = glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl"))
+        all_agy = glob.glob(os.path.expanduser("~/.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript.jsonl"))
+        all_codex = glob.glob(os.path.expanduser("~/.codex/sessions/*/*.jsonl")) + glob.glob(os.path.expanduser("~/.codex/*/*.jsonl"))
+
+        if proj_name:
+            candidates.extend([p for p in all_claude if proj_name in p])
+            candidates.extend([p for p in all_codex if proj_name in p])
+            if not candidates and ("antigravity" in proj_name.lower() or "agentglance" in proj_name.lower()):
+                candidates.extend(all_agy)
+
+        if not candidates:
+            candidates = all_claude + all_agy + all_codex
+
         if candidates:
             candidates.sort(key=os.path.getmtime)
             path = candidates[-1]
@@ -876,9 +894,8 @@ def _maybe_emit_agy_contract(ev):
 
 def _build_info(data, tp):
     """Assemble the metrics block pushed with a state (model/tokens/project)."""
-    info = parse_transcript(tp)
-    # claude/codex send `cwd`; agy sends `workspacePaths`
     cwd = data.get("cwd") or (data.get("workspacePaths") or [None])[0]
+    info = parse_transcript(tp, cwd=cwd)
     info["project"] = project_name(cwd)
     return info
 
