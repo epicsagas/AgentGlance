@@ -424,6 +424,13 @@ def parse_transcript(path):
     return info
 
 
+def _foot_str(d, host, proj, font, max_w):
+    """"<project> · <host>", project truncated so the pair always fits max_w."""
+    while proj and d.textlength("{} · {}".format(proj, host), font=font) > max_w:
+        proj = proj[:-1]
+    return "{} · {}".format(proj, host) if proj else host
+
+
 def render(state, sub=None, info=None, out=TMP_GIF):
     s = STATES.get(state, STATES["working"])
     info = info or {}
@@ -433,46 +440,50 @@ def render(state, sub=None, info=None, out=TMP_GIF):
     cx = W // 2
 
     d.rectangle([0, 0, W, 6], fill=s["fg"])              # top accent bar
-    d.ellipse([cx - 9, 24, cx + 9, 42], fill=s["fg"])    # status dot
-    if s["pulse"]:
-        d.ellipse([cx - 15, 18, cx + 15, 48], outline=s["fg"], width=2)
 
-    d.text((cx, 72), s["label"], font=_font(30, True), fill=s["fg"], anchor="mm")
+    # ---- header: project · host (top, bold) ----
+    host = detect_host()
+    proj = info.get("project") or project_name()
+    fhead = _font(14, True, cjk=True)
+    head = _foot_str(d, host, proj, fhead, 216)
+    d.text((cx, 18), head, font=fhead, fill=(240, 240, 240), anchor="mm")
+    d.line([(16, 30), (224, 30)], fill=s["fg"], width=1)  # divider under header
+
+    # ---- status core (compact) ----
+    d.ellipse([cx - 7, 40, cx + 7, 54], fill=s["fg"])    # status dot
+    if s["pulse"]:
+        d.ellipse([cx - 12, 35, cx + 12, 59], outline=s["fg"], width=2)
+
+    d.text((cx, 76), s["label"], font=_font(22, True), fill=s["fg"], anchor="mm")
 
     sub = (sub or "").strip() or s["sub"]
-    fsub = _font(16, cjk=True)
-    y = 100
+    fsub = _font(13, cjk=True)
+    y = 96
     for ln in _wrap(sub, fsub, 200, d):
-        d.text((cx, y), ln, font=fsub, fill=(235, 235, 235), anchor="mm")
-        y += 19
+        d.text((cx, y), ln, font=fsub, fill=(225, 225, 225), anchor="mm")
+        y += 16
 
-    d.line([(18, 142), (222, 142)], fill=s["fg"], width=1)
+    d.line([(16, 134), (224, 134)], fill=s["fg"], width=1)
 
-    # ---- metrics footer: model | context bar+% | tokens ----
+    # ---- metrics summary (anchored to the bottom) ----
     limit = info.get("limit", 200000)
     ctx = info.get("ctx", 0)
     pct = min(100, round(ctx / limit * 100)) if limit else 0
 
-    d.text((16, 156), info.get("model", "-"), font=_font(14, True), fill=(215, 215, 215))
-    d.text((224, 156), "{}%".format(pct), font=_font(15, True), fill=s["fg"], anchor="rt")
+    # in / ctx·limit / out token row, flush to the bottom edge
+    ftn = _font(12, False)
+    d.text((16, 222), "in {}".format(_fmt(info.get("cum_in", 0))), font=ftn, fill=(185, 185, 185), anchor="lm")
+    d.text((cx, 222), "{}/{}".format(_fmt(ctx), _fmt(limit)), font=ftn, fill=(220, 220, 220), anchor="mm")
+    d.text((224, 222), "out {}".format(_fmt(info.get("cum_out", 0))), font=ftn, fill=(185, 185, 185), anchor="rm")
 
-    # context usage bar
-    d.rectangle([16, 178, 224, 186], fill=(70, 70, 70))
-    d.rectangle([16, 178, 16 + int(208 * pct / 100), 186], fill=s["fg"])
+    # context usage bar (sits just above the token row)
+    d.rectangle([16, 198, 224, 206], fill=(70, 70, 70))
+    d.rectangle([16, 198, 16 + int(208 * pct / 100), 206], fill=s["fg"])
 
-    ftn = _font(13, False)
-    d.text((16, 196), "in {}".format(_fmt(info.get("cum_in", 0))), font=ftn, fill=(185, 185, 185))
-    d.text((cx, 196), "{}/{}".format(_fmt(ctx), _fmt(limit)), font=ftn, fill=(220, 220, 220), anchor="mm")
-    d.text((224, 196), "out {}".format(_fmt(info.get("cum_out", 0))), font=ftn, fill=(185, 185, 185), anchor="rt")
+    # model (left) + context % (right), above the bar
+    d.text((16, 178), info.get("model", "-"), font=_font(13, True), fill=(215, 215, 215), anchor="lm")
+    d.text((224, 178), "{}%".format(pct), font=_font(14, True), fill=s["fg"], anchor="rm")
 
-    # footer: "<project> · <host>", project truncated so the pair always fits
-    host = detect_host()
-    proj = info.get("project") or project_name()
-    ffoot = _font(12, cjk=True)
-    while proj and d.textlength("{} · {}".format(proj, host), font=ffoot) > 216:
-        proj = proj[:-1]
-    foot = "{} · {}".format(proj, host) if proj else host
-    d.text((cx, 224), foot, font=ffoot, fill=(150, 150, 150), anchor="mm")
     img.save(out, "GIF")
     return out
 
