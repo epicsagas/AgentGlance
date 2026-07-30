@@ -520,6 +520,23 @@ def _foot_str(d, host, proj, font, max_w):
     return "{} · {}".format(proj, host) if proj else host
 
 
+def get_context_tier_color(pct):
+    """4-tier dynamic color scheme for context window fill:
+    - 0% ~ 49%: Normal / Safe (Mint Green)
+    - 50% ~ 74%: Moderate Usage (Golden Yellow)
+    - 75% ~ 89%: High Usage (Warning Orange)
+    - 90% ~ 100%: Critical / Danger (Alert Red)
+    """
+    if pct >= 90:
+        return (255, 75, 75)
+    elif pct >= 75:
+        return (255, 140, 40)
+    elif pct >= 50:
+        return (255, 205, 70)
+    else:
+        return (120, 230, 160)
+
+
 def render(state, sub=None, info=None, out=TMP_GIF):
     s = STATES.get(state, STATES["working"])
     info = info or {}
@@ -572,14 +589,13 @@ def render(state, sub=None, info=None, out=TMP_GIF):
     d.text((cx, 228), "{}/{}".format(_fmt(ctx), _fmt(limit)), font=ftn, fill=(220, 220, 220), anchor="mm")
     d.text((224, 228), "out {}".format(_fmt(info.get("cum_out", 0))), font=ftn, fill=(185, 185, 185), anchor="rm")
 
-    # Colors for context bar & percentage (Danger zone: pct >= 85)
-    bar_fg = (255, 120, 50) if pct >= 85 else s["fg"]
-    pct_fg = (255, 140, 60) if pct >= 85 else s["fg"]
+    # Tier-based dynamic color for context bar & percentage label
+    tier_color = get_context_tier_color(pct)
 
     # context usage bar (well clear of the token glyphs above it)
     d.rectangle([16, 200, 224, 208], fill=(70, 70, 70))
     if pct > 0:
-        d.rectangle([16, 200, 16 + int(208 * pct / 100), 208], fill=bar_fg)
+        d.rectangle([16, 200, 16 + int(208 * pct / 100), 208], fill=tier_color)
 
     # model (left) + context % (right), above the bar
     if compacted:
@@ -591,7 +607,7 @@ def render(state, sub=None, info=None, out=TMP_GIF):
 
     model_str = info.get("model", "-")
     d.text((16, 182), model_str, font=_font(13, True), fill=(215, 215, 215), anchor="lm")
-    d.text((224, 182), pct_str, font=_font(14, True), fill=pct_fg, anchor="rm")
+    d.text((224, 182), pct_str, font=_font(14, True), fill=tier_color, anchor="rm")
 
     # divider capping the whole metrics block
     d.line([(16, 168), (224, 168)], fill=s["fg"], width=1)
