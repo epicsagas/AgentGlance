@@ -457,18 +457,19 @@ def render(state, sub=None, info=None, out=TMP_GIF):
     row_w = dot_r * 2 + gap + label_w          # dot + gap + text
     rx = cx - row_w / 2                         # left edge of the row
     dot_cx = rx + dot_r                         # dot center
-    d.ellipse([dot_cx - dot_r, 62 - dot_r, dot_cx + dot_r, 62 + dot_r], fill=s["fg"])
+    status_y = 68
+    d.ellipse([dot_cx - dot_r, status_y - dot_r, dot_cx + dot_r, status_y + dot_r], fill=s["fg"])
     if s["pulse"]:
-        d.ellipse([dot_cx - dot_r - 4, 62 - dot_r - 4,
-                   dot_cx + dot_r + 4, 62 + dot_r + 4], outline=s["fg"], width=2)
-    d.text((dot_cx + dot_r + gap, 62), s["label"], font=flab, fill=s["fg"], anchor="lm")
+        d.ellipse([dot_cx - dot_r - 4, status_y - dot_r - 4,
+                   dot_cx + dot_r + 4, status_y + dot_r + 4], outline=s["fg"], width=2)
+    d.text((dot_cx + dot_r + gap, status_y), s["label"], font=flab, fill=s["fg"], anchor="lm")
 
     sub = (sub or "").strip() or s["sub"]
-    fsub = _font(13, cjk=True)
-    y = 90                                      # margin below the status row
+    fsub = _font(18, cjk=True)
+    y = 100                                     # margin below the status row
     for ln in _wrap(sub, fsub, 200, d, max_lines=3):
         d.text((cx, y), ln, font=fsub, fill=(225, 225, 225), anchor="mm")
-        y += 17
+        y += 22
 
     # ---- metrics block: flush to the bottom, generous row spacing ----
     limit = info.get("limit", 200000)
