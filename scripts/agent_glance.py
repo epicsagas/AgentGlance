@@ -598,13 +598,7 @@ def render(state, sub=None, info=None, out=TMP_GIF):
         d.rectangle([16, 200, 16 + int(208 * pct / 100), 208], fill=tier_color)
 
     # model (left) + context % (right), above the bar
-    if compacted:
-        pct_str = "(C) {}%".format(pct)
-    elif pct >= 85:
-        pct_str = "(!) {}%".format(pct)
-    else:
-        pct_str = "{}%".format(pct)
-
+    pct_str = "{}%".format(pct)
     model_str = info.get("model", "-")
     d.text((16, 182), model_str, font=_font(13, True), fill=(215, 215, 215), anchor="lm")
     d.text((224, 182), pct_str, font=_font(14, True), fill=tier_color, anchor="rm")
