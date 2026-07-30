@@ -441,48 +441,56 @@ def render(state, sub=None, info=None, out=TMP_GIF):
 
     d.rectangle([0, 0, W, 6], fill=s["fg"])              # top accent bar
 
-    # ---- header: project · host (top, bold) ----
+    # ---- header: project · host (top, bold, large) ----
     host = detect_host()
     proj = info.get("project") or project_name()
-    fhead = _font(14, True, cjk=True)
+    fhead = _font(18, True, cjk=True)
     head = _foot_str(d, host, proj, fhead, 216)
-    d.text((cx, 18), head, font=fhead, fill=(240, 240, 240), anchor="mm")
-    d.line([(16, 30), (224, 30)], fill=s["fg"], width=1)  # divider under header
+    d.text((cx, 20), head, font=fhead, fill=(240, 240, 240), anchor="mm")
+    d.line([(16, 36), (224, 36)], fill=s["fg"], width=1)  # divider under header
 
-    # ---- status core (compact) ----
-    d.ellipse([cx - 7, 40, cx + 7, 54], fill=s["fg"])    # status dot
+    # ---- status: dot + label inline on one row ----
+    flab = _font(26, True)
+    label_w = d.textlength(s["label"], font=flab)
+    dot_r = 6
+    gap = 7
+    row_w = dot_r * 2 + gap + label_w          # dot + gap + text
+    rx = cx - row_w / 2                         # left edge of the row
+    dot_cx = rx + dot_r                         # dot center
+    d.ellipse([dot_cx - dot_r, 54 - dot_r, dot_cx + dot_r, 54 + dot_r], fill=s["fg"])
     if s["pulse"]:
-        d.ellipse([cx - 12, 35, cx + 12, 59], outline=s["fg"], width=2)
-
-    d.text((cx, 76), s["label"], font=_font(22, True), fill=s["fg"], anchor="mm")
+        d.ellipse([dot_cx - dot_r - 4, 54 - dot_r - 4,
+                   dot_cx + dot_r + 4, 54 + dot_r + 4], outline=s["fg"], width=2)
+    d.text((dot_cx + dot_r + gap, 54), s["label"], font=flab, fill=s["fg"], anchor="lm")
 
     sub = (sub or "").strip() or s["sub"]
     fsub = _font(13, cjk=True)
-    y = 96
+    y = 82                                      # margin below the status row
     for ln in _wrap(sub, fsub, 200, d):
         d.text((cx, y), ln, font=fsub, fill=(225, 225, 225), anchor="mm")
         y += 16
 
-    d.line([(16, 134), (224, 134)], fill=s["fg"], width=1)
-
-    # ---- metrics summary (anchored to the bottom) ----
+    # ---- metrics block: flush to the bottom, moving as a group ----
     limit = info.get("limit", 200000)
     ctx = info.get("ctx", 0)
     pct = min(100, round(ctx / limit * 100)) if limit else 0
 
-    # in / ctx·limit / out token row, flush to the bottom edge
+    # token row, flush to the bottom edge
     ftn = _font(12, False)
     d.text((16, 222), "in {}".format(_fmt(info.get("cum_in", 0))), font=ftn, fill=(185, 185, 185), anchor="lm")
     d.text((cx, 222), "{}/{}".format(_fmt(ctx), _fmt(limit)), font=ftn, fill=(220, 220, 220), anchor="mm")
     d.text((224, 222), "out {}".format(_fmt(info.get("cum_out", 0))), font=ftn, fill=(185, 185, 185), anchor="rm")
 
-    # context usage bar (sits just above the token row)
+    # context usage bar (above the token row)
     d.rectangle([16, 198, 224, 206], fill=(70, 70, 70))
     d.rectangle([16, 198, 16 + int(208 * pct / 100), 206], fill=s["fg"])
 
     # model (left) + context % (right), above the bar
     d.text((16, 178), info.get("model", "-"), font=_font(13, True), fill=(215, 215, 215), anchor="lm")
     d.text((224, 178), "{}%".format(pct), font=_font(14, True), fill=s["fg"], anchor="rm")
+
+    # divider capping the whole metrics block
+    d.line([(16, 166), (224, 166)], fill=s["fg"], width=1)
 
     img.save(out, "GIF")
     return out
