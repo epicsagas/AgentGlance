@@ -9,14 +9,16 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "ask_permission",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$HOME/.gemini/config/plugins/agent-glance/scripts/agent_glance.py\"",
-            "timeout": 10
-          }
-        ]
+        "type": "command",
+        "command": "python3 \"$HOME/.gemini/config/plugins/agent-glance/scripts/agent_glance.py\"",
+        "timeout": 10
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "python3 \"$HOME/.gemini/config/plugins/agent-glance/scripts/agent_glance.py\"",
+        "timeout": 10
       }
     ],
     "Stop": [

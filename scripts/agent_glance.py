@@ -261,24 +261,24 @@ def _drain_queue():
 
 def _resolve_state_key(ev, data):
     """Map an event to a display state, or None if it shouldn't update."""
-    state = EVENT_STATE.get(ev)
-    # agy has no approval event; its permission gate surfaces as a PreToolUse
-    # on the ask_permission tool.
-    if state is None and ev == "PreToolUse":
-        tool = (data.get("toolCall") or {}).get("name") or data.get("tool_name") or ""
+    if ev in ("Notification", "PermissionRequest"):
+        return "waiting"
+    if ev in ("PreToolUse",):
+        tool = (data.get("toolCall") or {}).get("name") or data.get("tool_name") or data.get("tool") or ""
         if tool == "ask_permission":
-            state = "waiting"
-    return state
+            return "waiting"
+        return "working"
+    return EVENT_STATE.get(ev)
 
 
 def _resolve(entries):
-    """Pick the winning entry: highest priority, then most recent (ts, seq)."""
+    """Pick the winning entry: most recent timestamp/seq wins, using priority as tiebreaker."""
     if not entries:
         return None
     return max(entries, key=lambda e: (
-        STATE_PRIORITY.get(e.get("state"), 0),
         e.get("ts", 0),
         e.get("seq", 0),
+        STATE_PRIORITY.get(e.get("state"), 0),
     ))
 
 
@@ -610,7 +610,10 @@ def push_state(state, sub=None, info=None):
     try:
         if os.path.exists(THROTTLE_PATH):
             prev = json.load(open(THROTTLE_PATH))
-            if prev.get("key") == key and now - prev.get("t", 0) < THROTTLE_SEC:
+            prev_key = prev.get("key", "")
+            prev_state = prev_key.split("|")[0] if "|" in prev_key else ""
+            # Only throttle if the state AND subtitle are identical. State transitions ALWAYS push!
+            if prev_state == state and prev_key == key and now - prev.get("t", 0) < THROTTLE_SEC:
                 return False  # identical state pushed recently -> skip
     except Exception:
         pass
@@ -763,9 +766,11 @@ def _devnull_stdio():
 # approval event is PermissionRequest.
 EVENT_STATE = {
     "UserPromptSubmit":  "working",   # claude, codex
-    "PreInvocation":     "working",   # agy (closest thing to "turn started")
+    "PreInvocation":     "working",   # agy
     "Notification":      "waiting",   # claude
     "PermissionRequest": "waiting",   # codex
+    "PreToolUse":        "working",   # claude, codex, agy
+    "PostToolUse":       "working",   # claude, codex, agy
     "Stop":              "done",      # claude, codex, agy
     "SubagentStop":      "done",      # claude, codex
 }
@@ -791,11 +796,14 @@ def _subtitle_for(ev, data):
     if ev in ("UserPromptSubmit",):
         return _trim(data.get("prompt") or data.get("user_prompt") or "", 38)
     if ev in ("Notification",):
-        return _trim(data.get("message") or "", 38)
+        return _trim(data.get("message") or "approval requested", 38)
     if ev == "PermissionRequest":
         return _trim(data.get("tool_name") or "approval needed", 38)
-    if ev == "PreToolUse":                      # agy approval gate
-        return _trim("approval requested", 38)
+    if ev in ("PreToolUse", "PostToolUse"):
+        tool = (data.get("toolCall") or {}).get("name") or data.get("tool_name") or data.get("tool") or ""
+        if tool == "ask_permission":
+            return _trim("approval requested", 38)
+        return _trim(tool or "executing tool…", 38)
     return None
 
 
