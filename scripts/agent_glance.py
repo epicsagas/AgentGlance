@@ -422,6 +422,37 @@ def parse_transcript(path=None):
     fallback_limit = load_config().get("context_limit", 200000)
     info = {"model": "-", "ctx": 0, "cum_in": 0, "cum_out": 0, "compacted": False, "limit": fallback_limit}
 
+    # Check live status cache (~/.agent-glance/last_status.json) for 100% exact parity with TUI
+    cache_file = os.path.expanduser("~/.agent-glance/last_status.json")
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file) as cf:
+                cache_data = json.load(cf)
+            cw = cache_data.get("context_window") or {}
+            m = cache_data.get("model") or {}
+            c_in = cw.get("total_input_tokens") or cw.get("input_tokens") or 0
+            c_out = cw.get("total_output_tokens") or cw.get("output_tokens") or 0
+            c_pct = cw.get("used_percentage")
+            c_limit = cw.get("context_window_size") or cw.get("max_tokens")
+            c_model = m.get("id") or m.get("display_name")
+
+            if c_pct is not None or c_in or c_out:
+                if c_model:
+                    info["model"] = str(c_model)
+                if c_limit:
+                    info["limit"] = int(c_limit)
+                else:
+                    info["limit"] = resolve_model_context_limit(info["model"], fallback_limit)
+                info["cum_in"] = int(c_in)
+                info["cum_out"] = int(c_out)
+                if c_pct is not None:
+                    info["ctx"] = int(info["limit"] * float(c_pct) / 100)
+                else:
+                    info["ctx"] = info["cum_in"] + info["cum_out"]
+                return info
+        except Exception:
+            pass
+
     if not path or not os.path.exists(path):
         candidates = []
         candidates.extend(glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl")))
