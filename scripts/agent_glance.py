@@ -410,17 +410,70 @@ def _estimate_tokens(text):
     return max(1, int(len(str(text)) / 3.5))
 
 
-def parse_transcript(path=None):
-    """Pull model + token usage from the session transcript JSONL across hosts.
+def git_branch(cwd=None):
+    try:
+        p = cwd or os.getcwd()
+        res = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=p, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=1)
+        if res.returncode == 0:
+            b = res.stdout.strip()
+            if b and b != "HEAD":
+                return b
+    except Exception:
+        pass
+    return None
 
-    ctx       = current context fill
-    cum_in    = cumulative input-side tokens across session
-    cum_out   = cumulative output tokens across session
-    compacted = whether context compaction occurred
-    limit     = resolved model context window ceiling
-    """
+
+def estimate_cost(model, cum_in, cum_out):
+    m = (model or "").lower()
+    if "flash" in m or "mini" in m:
+        in_p, out_p = 0.15, 0.60
+    elif "pro" in m or "sonnet" in m or "gpt-4" in m or "claude" in m:
+        in_p, out_p = 2.50, 10.00
+    elif "opus" in m:
+        in_p, out_p = 15.00, 75.00
+    else:
+        in_p, out_p = 0.50, 1.50
+    return (cum_in * in_p + cum_out * out_p) / 1_000_000
+
+
+def format_duration(sec):
+    sec = int(sec or 0)
+    if sec < 60:
+        return f"{sec}s"
+    m = sec // 60
+    s = sec % 60
+    if m < 60:
+        return f"{m}m {s}s"
+    h = m // 60
+    m = m % 60
+    return f"{h}h {m}m"
+
+
+def parse_iso_ts(ts_str):
+    if not ts_str:
+        return None
+    try:
+        ts_str = str(ts_str).rstrip("Z").split(".")[0]
+        return time.mktime(time.strptime(ts_str, "%Y-%m-%dT%H:%M:%S"))
+    except Exception:
+        return None
+
+
+def parse_transcript(path=None):
+    """Pull model + token usage + duration + cost from session transcript JSONL across hosts."""
     fallback_limit = load_config().get("context_limit", 200000)
-    info = {"model": "-", "ctx": 0, "cum_in": 0, "cum_out": 0, "compacted": False, "limit": fallback_limit}
+    info = {
+        "model": "-",
+        "ctx": 0,
+        "cum_in": 0,
+        "cum_out": 0,
+        "total": 0,
+        "cost": 0.0,
+        "duration": "0s",
+        "subagents": 0,
+        "compacted": False,
+        "limit": fallback_limit,
+    }
 
     if not path or not os.path.exists(path):
         candidates = []
@@ -440,6 +493,9 @@ def parse_transcript(path=None):
     is_agy = "antigravity-cli" in path or ".system_generated" in path
     peak_in = 0
     last_u = None
+    start_ts = None
+    latest_ts = None
+    subagents = 0
 
     try:
         with open(path, errors="ignore") as fh:
@@ -449,12 +505,22 @@ def parse_transcript(path=None):
                 except Exception:
                     continue
 
+                ts = parse_iso_ts(o.get("created_at") or o.get("timestamp"))
+                if ts:
+                    if start_ts is None or ts < start_ts:
+                        start_ts = ts
+                    if latest_ts is None or ts > latest_ts:
+                        latest_ts = ts
+
                 if is_agy:
                     stype = o.get("type", "")
                     source = o.get("source", "")
                     content = o.get("content", "") or ""
                     thinking = o.get("thinking", "") or ""
                     tool_calls = json.dumps(o.get("tool_calls", [])) if o.get("tool_calls") else ""
+
+                    if "invoke_subagent" in tool_calls or "invoke_subagent" in content:
+                        subagents += 1
 
                     if "Model Selection" in content:
                         for line_c in content.splitlines():
@@ -509,6 +575,14 @@ def parse_transcript(path=None):
     if info["model"] == "-" and is_agy:
         info["model"] = "Gemini 3.6 Flash"
 
+    if start_ts and latest_ts and latest_ts >= start_ts:
+        info["duration"] = format_duration(latest_ts - start_ts)
+    else:
+        info["duration"] = "0s"
+
+    info["total"] = info["cum_in"] + info["cum_out"]
+    info["cost"] = estimate_cost(info["model"], info["cum_in"], info["cum_out"])
+    info["subagents"] = subagents
     info["limit"] = resolve_model_context_limit(info["model"], fallback_limit)
     return info
 
@@ -547,23 +621,30 @@ def render(state, sub=None, info=None, out=TMP_GIF):
 
     d.rectangle([0, 0, W, 6], fill=s["fg"])              # top accent bar
 
-    # ---- header: project · host (top, bold, large) ----
+    # ---- header: project · branch · host (top, bold) ----
     host = detect_host()
     proj = info.get("project") or project_name()
-    fhead = _font(18, True, cjk=True)
-    head = _foot_str(d, host, proj, fhead, 216)
-    d.text((cx, 26), head, font=fhead, fill=(240, 240, 240), anchor="mm")
-    d.line([(16, 42), (224, 42)], fill=s["fg"], width=1)  # divider under header
+    branch = info.get("branch") or git_branch()
+
+    if branch:
+        head_str = "{} · {}".format(proj, branch)
+    else:
+        head_str = "{} · {}".format(proj, host)
+
+    fhead = _font(16, True, cjk=True)
+    head_str = _foot_str(d, host, head_str, fhead, 216)
+    d.text((cx, 24), head_str, font=fhead, fill=(240, 240, 240), anchor="mm")
+    d.line([(14, 38), (226, 38)], fill=s["fg"], width=1)  # divider under header
 
     # ---- status: dot + label inline on one row ----
-    flab = _font(26, True)
+    flab = _font(24, True)
     label_w = d.textlength(s["label"], font=flab)
-    dot_r = 6
-    gap = 16
-    row_w = dot_r * 2 + gap + label_w          # dot + gap + text
-    rx = cx - row_w / 2                         # left edge of the row
-    dot_cx = rx + dot_r                         # dot center
-    status_y = 68
+    dot_r = 5
+    gap = 14
+    row_w = dot_r * 2 + gap + label_w
+    rx = cx - row_w / 2
+    dot_cx = rx + dot_r
+    status_y = 60
     d.ellipse([dot_cx - dot_r, status_y - dot_r, dot_cx + dot_r, status_y + dot_r], fill=s["fg"])
     if s["pulse"]:
         d.ellipse([dot_cx - dot_r - 4, status_y - dot_r - 4,
@@ -571,43 +652,55 @@ def render(state, sub=None, info=None, out=TMP_GIF):
     d.text((dot_cx + dot_r + gap, status_y), s["label"], font=flab, fill=s["fg"], anchor="lm")
 
     sub = (sub or "").strip() or s["sub"]
-    fsub = _font(18, cjk=True)
-    y = 100                                     # margin below the status row
+    fsub = _font(16, cjk=True)
+    y = 90                                      # margin below the status row
     for ln in _wrap(sub, fsub, 200, d, max_lines=3):
         d.text((cx, y), ln, font=fsub, fill=(225, 225, 225), anchor="mm")
-        y += 22
+        y += 20
 
-    # ---- metrics block: flush to the bottom, generous row spacing ----
+    # ---- metrics block ----
     limit = info.get("limit") or resolve_model_context_limit(info.get("model"), load_config().get("context_limit", 200000))
     ctx = info.get("ctx", 0)
     pct = min(100, round(ctx / limit * 100)) if limit else 0
     compacted = info.get("compacted", False)
-
-    # token row, flush to the bottom edge
-    ftn = _font(12, False)
-    d.text((16, 228), "in {}".format(_fmt(info.get("cum_in", 0))), font=ftn, fill=(185, 185, 185), anchor="lm")
-    d.text((cx, 228), "{}/{}".format(_fmt(ctx), _fmt(limit)), font=ftn, fill=(220, 220, 220), anchor="mm")
-    d.text((224, 228), "out {}".format(_fmt(info.get("cum_out", 0))), font=ftn, fill=(185, 185, 185), anchor="rm")
-
-    # Tier-based dynamic color for context bar & percentage label
     tier_color = get_context_tier_color(pct)
 
-    # context usage bar (well clear of the token glyphs above it)
-    d.rectangle([16, 200, 224, 208], fill=(70, 70, 70))
-    if pct > 0:
-        d.rectangle([16, 200, 16 + int(208 * pct / 100), 208], fill=tier_color)
+    # Divider capping metrics block
+    d.line([(14, 154), (226, 154)], fill=s["fg"], width=1)
 
-    # model (left) + context % (right), above the bar
-    pct_str = "{}%".format(pct)
+    # Model [Limit] (left) + Context % (right)
+    limit_fmt = _fmt(limit)
     model_str = info.get("model", "-")
-    d.text((16, 182), model_str, font=_font(13, True), fill=(215, 215, 215), anchor="lm")
-    d.text((224, 182), pct_str, font=_font(14, True), fill=tier_color, anchor="rm")
+    model_tag = "{} [{}]".format(model_str, limit_fmt) if limit_fmt else model_str
+    pct_str = "{}%".format(pct)
 
-    # divider capping the whole metrics block
-    d.line([(16, 168), (224, 168)], fill=s["fg"], width=1)
+    d.text((14, 170), model_tag, font=_font(13, True), fill=(215, 215, 215), anchor="lm")
+    d.text((226, 170), pct_str, font=_font(14, True), fill=tier_color, anchor="rm")
 
-    # divider capping the whole metrics block
-    d.line([(16, 166), (224, 166)], fill=s["fg"], width=1)
+    # Context usage bar
+    d.rectangle([14, 186, 226, 193], fill=(60, 60, 60))
+    if pct > 0:
+        d.rectangle([14, 186, 14 + int(212 * pct / 100), 193], fill=tier_color)
+
+    # Token & Cost row
+    ftn = _font(11, False)
+    in_str = _fmt(info.get("cum_in", 0))
+    out_str = _fmt(info.get("cum_out", 0))
+    tot_str = _fmt(info.get("total", 0))
+    cost_val = info.get("cost", 0.0)
+    cost_str = "${:.2f}".format(cost_val) if cost_val > 0 else "$0.00"
+
+    tok_label = "in:{} out:{} tot:{}".format(in_str, out_str, tot_str)
+    d.text((14, 208), tok_label, font=ftn, fill=(200, 200, 200), anchor="lm")
+    d.text((226, 208), cost_str, font=_font(11, True), fill=(255, 210, 80), anchor="rm")
+
+    # Session Duration & Subagents row
+    dur_str = "⏱ {}".format(info.get("duration", "0s"))
+    subs = info.get("subagents", 0)
+    sub_str = "← {} agent{}".format(subs, "s" if subs != 1 else "") if subs > 0 else host
+
+    d.text((14, 226), dur_str, font=_font(11, True, True), fill=(180, 180, 180), anchor="lm")
+    d.text((226, 226), sub_str, font=ftn, fill=(180, 180, 180), anchor="rm")
 
     img.save(out, "GIF")
     return out
