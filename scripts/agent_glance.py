@@ -446,8 +446,8 @@ def render(state, sub=None, info=None, out=TMP_GIF):
     proj = info.get("project") or project_name()
     fhead = _font(18, True, cjk=True)
     head = _foot_str(d, host, proj, fhead, 216)
-    d.text((cx, 20), head, font=fhead, fill=(240, 240, 240), anchor="mm")
-    d.line([(16, 36), (224, 36)], fill=s["fg"], width=1)  # divider under header
+    d.text((cx, 26), head, font=fhead, fill=(240, 240, 240), anchor="mm")
+    d.line([(16, 42), (224, 42)], fill=s["fg"], width=1)  # divider under header
 
     # ---- status: dot + label inline on one row ----
     flab = _font(26, True)
@@ -457,37 +457,40 @@ def render(state, sub=None, info=None, out=TMP_GIF):
     row_w = dot_r * 2 + gap + label_w          # dot + gap + text
     rx = cx - row_w / 2                         # left edge of the row
     dot_cx = rx + dot_r                         # dot center
-    d.ellipse([dot_cx - dot_r, 54 - dot_r, dot_cx + dot_r, 54 + dot_r], fill=s["fg"])
+    d.ellipse([dot_cx - dot_r, 62 - dot_r, dot_cx + dot_r, 62 + dot_r], fill=s["fg"])
     if s["pulse"]:
-        d.ellipse([dot_cx - dot_r - 4, 54 - dot_r - 4,
-                   dot_cx + dot_r + 4, 54 + dot_r + 4], outline=s["fg"], width=2)
-    d.text((dot_cx + dot_r + gap, 54), s["label"], font=flab, fill=s["fg"], anchor="lm")
+        d.ellipse([dot_cx - dot_r - 4, 62 - dot_r - 4,
+                   dot_cx + dot_r + 4, 62 + dot_r + 4], outline=s["fg"], width=2)
+    d.text((dot_cx + dot_r + gap, 62), s["label"], font=flab, fill=s["fg"], anchor="lm")
 
     sub = (sub or "").strip() or s["sub"]
     fsub = _font(13, cjk=True)
-    y = 82                                      # margin below the status row
+    y = 90                                      # margin below the status row
     for ln in _wrap(sub, fsub, 200, d):
         d.text((cx, y), ln, font=fsub, fill=(225, 225, 225), anchor="mm")
         y += 16
 
-    # ---- metrics block: flush to the bottom, moving as a group ----
+    # ---- metrics block: moved up as a group, bottom breathing room ----
     limit = info.get("limit", 200000)
     ctx = info.get("ctx", 0)
     pct = min(100, round(ctx / limit * 100)) if limit else 0
 
-    # token row, flush to the bottom edge
+    # token row
     ftn = _font(12, False)
-    d.text((16, 222), "in {}".format(_fmt(info.get("cum_in", 0))), font=ftn, fill=(185, 185, 185), anchor="lm")
-    d.text((cx, 222), "{}/{}".format(_fmt(ctx), _fmt(limit)), font=ftn, fill=(220, 220, 220), anchor="mm")
-    d.text((224, 222), "out {}".format(_fmt(info.get("cum_out", 0))), font=ftn, fill=(185, 185, 185), anchor="rm")
+    d.text((16, 204), "in {}".format(_fmt(info.get("cum_in", 0))), font=ftn, fill=(185, 185, 185), anchor="lm")
+    d.text((cx, 204), "{}/{}".format(_fmt(ctx), _fmt(limit)), font=ftn, fill=(220, 220, 220), anchor="mm")
+    d.text((224, 204), "out {}".format(_fmt(info.get("cum_out", 0))), font=ftn, fill=(185, 185, 185), anchor="rm")
 
     # context usage bar (above the token row)
-    d.rectangle([16, 198, 224, 206], fill=(70, 70, 70))
-    d.rectangle([16, 198, 16 + int(208 * pct / 100), 206], fill=s["fg"])
+    d.rectangle([16, 180, 224, 188], fill=(70, 70, 70))
+    d.rectangle([16, 180, 16 + int(208 * pct / 100), 188], fill=s["fg"])
 
     # model (left) + context % (right), above the bar
-    d.text((16, 178), info.get("model", "-"), font=_font(13, True), fill=(215, 215, 215), anchor="lm")
-    d.text((224, 178), "{}%".format(pct), font=_font(14, True), fill=s["fg"], anchor="rm")
+    d.text((16, 160), info.get("model", "-"), font=_font(13, True), fill=(215, 215, 215), anchor="lm")
+    d.text((224, 160), "{}%".format(pct), font=_font(14, True), fill=s["fg"], anchor="rm")
+
+    # divider capping the whole metrics block
+    d.line([(16, 148), (224, 148)], fill=s["fg"], width=1)
 
     # divider capping the whole metrics block
     d.line([(16, 166), (224, 166)], fill=s["fg"], width=1)
