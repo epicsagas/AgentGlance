@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, "feat/*", "feat/**" ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install Pillow
+
+      - name: Check Python Syntax
+        run: |
+          python -m py_compile scripts/*.py
+
+      - name: Validate JSON Files
+        run: |
+          python -c "
+          import os, json, sys
+          for root, dirs, files in os.walk('.'):
+              if '.git' in root or '.cache' in root:
+                  continue
+              for f in files:
+                  if f.endswith('.json'):
+                      path = os.path.join(root, f)
+                      try:
+                          with open(path, 'r', encoding='utf-8') as fh:
+                              json.load(fh)
+                          print(f'OK: {path}')
+                      except Exception as e:
+                          print(f'Error in {path}: {e}', file=sys.stderr)
+                          sys.exit(1)
+          "
+
+      - name: Dry Run Test Output (Generate Frame)
+        run: |
+          python scripts/agent_glance.py --test working "CI Test"
+          test -f /tmp/agent_status.gif

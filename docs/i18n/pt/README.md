@@ -118,6 +118,84 @@ A configuração é lida **primeiro via variáveis de ambiente**, recorrendo a `
 |---|---|---|
 | `AGENT_GLANCE_IP` | IP do dispositivo — **obrigatório** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | janela de contexto usada para escalar a barra de % | `200000` |
+| `AGENT_GLANCE_PRESET` | predefinição de exibição: `default` \| `hosts` \| `custom` | `hosts` |
+| `AGENT_GLANCE_LAYOUT` | layout do modo gif: `frame` \| `fullscreen` | `frame` |
+
+### Modo GIF e predefinições
+
+> [!WARNING]
+> **Aviso sobre o tamanho do GIF**: Arquivos GIF grandes causam uma forte sobrecarga na memória do dispositivo (RAM/Flash do ESP8266) e podem provocar reinicializações ou falhas inesperadas. Mantenha seus arquivos estritamente abaixo de **< 100 KB**.
+
+O modo padrão é o quadro estático de status descrito acima. Escolher outra predefinição alterna para o **modo gif**, que compõe um GIF animado em loop (personagem no meio, com cabeçalho e rodapé de status mantidos) reproduzido localmente pelo dispositivo — um upload por estado, sem tráfego por quadro. O estado ainda é sinalizado pela barra de destaque superior + cor de fundo.
+
+| Predefinição | O que mostra |
+|---|---|
+| `default` | Quadro estático (o comportamento original) |
+| `hosts` | Um GIF de personagem por host, embutido, no meio; cabeçalho + rodapé mantidos |
+| `custom` | Seus próprios GIFs, por host e/ou por estado (ver esquema) |
+
+Escolha uma predefinição com o flag CLI `--preset` (persiste em `config.json`, como `--ip`):
+
+```
+python3 scripts/agent_glance.py --preset hosts
+```
+
+`hosts` vem com espaços reservados neutros em `assets/hosts/`. Substitua um soltando um `<host>.gif` em `~/.agent-glance/gifs/hosts/` (ex.: `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`) — o arquivo do usuário prevalece sobre o embutido.
+
+### Especificações ideais de GIF
+
+| Parâmetro | Layout `frame` | Layout `fullscreen` |
+|---|---|---|
+| **Resolução ideal** | **224 × 116 px** (~1.93:1) ou **116 × 116 px** (1:1) | **240 × 240 px** (quadrado 1:1) |
+| **Alvo de composição** | Ajusta-se dentro de `MIDDLE_BOX = (8, 46, 224, 116)` | Cobre toda a tela de 1.54" do SmallTV |
+| **Tamanho de arquivo recomendado** | **< 100 KB** (Máximo estrito < 300 KB para evitar falhas de RAM/OOM e reinicializações no ESP8266) |
+| **Contagem de quadros** | **12 – 16 quadros** (o renderizador reduz quadros excedentes para `_MAX_FRAMES = 16`) |
+| **Atraso de quadro** | **80ms – 150ms** por quadro (loop de 1.2s – 2.0s) |
+| **Paleta de cores** | **64 – 128 cores** (otimiza a velocidade de renderização e desgaste da Flash) |
+
+**Reduzir um GIF de origem para a especificação** (exportações brutas facilmente passam de vários MB): amostre quadros uniformemente por todo o clipe e depois recodifique com um loop curto para que toda a amplitude de movimento sobreviva mesmo com a velocidade de reprodução comprimida.
+
+1 — amostre ~14 quadros uniformemente da origem, recortados/escalados conforme o layout:
+
+```bash
+# layout frame: encaixado com letterbox em MIDDLE_BOX, então só reduzir a escala (sem necessidade de recorte)
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=224:116:force_original_aspect_ratio=decrease" \
+  -vsync 0 frames/f_%03d.png
+
+# layout fullscreen: esticado para preencher 240x240, então recorte para quadrado antes ou vai distorcer
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=240:240:force_original_aspect_ratio=increase,crop=240:240" \
+  -vsync 0 frames/f_%03d.png
+```
+
+`STEP` = número de quadros da origem ÷ 14 (arredondado para baixo) — use ffprobe na origem (`ffprobe -v error -select_streams v -show_entries stream=nb_frames -of default=nw=1 source.gif`) para obtê-lo.
+
+2 — recodifique os quadros amostrados com um loop curto (10fps = 100ms/quadro ≈ 1.4s de loop para 14 quadros) e uma paleta pequena:
+
+```bash
+ffmpeg -framerate 10 -i frames/f_%03d.png \
+  -vf "split[s0][s1];[s0]palettegen=max_colors=64:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer" \
+  output.gif
+```
+
+Ainda acima de 300 KB? Reduza `max_colors` para 32 (tente também `dither=none`) antes de cortar a contagem de quadros — é isso que realmente encarece o loop.
+
+
+`custom` lê `display.gifs` do `config.json`. Cada entrada de host é uma string de caminho (um GIF para todos os estados) ou um mapa por estado; `"default"` é o fallback. Qualquer entrada também pode ser `{"path": ..., "layout": "fullscreen"}` para ir tela cheia somente nessa:
+
+```json
+"display": {
+  "preset": "custom",
+  "layout": "frame",
+  "gifs": {
+    "default": "/abs/path/fallback.gif",
+    "claude code": { "working": "a.gif", "waiting": "b.gif", "done": "c.gif" },
+    "codex": "/one-gif-for-all-states.gif",
+    "agent": { "path": "x.gif", "layout": "fullscreen" }
+  }
+}
+```
+
+Ordem de resolução por push: `gifs[host][state]` → `gifs[host]` → `gifs["default"]` → espaço reservado embutido de hosts. Um GIF ausente ou ilegível nunca apaga a tela — recai para o quadro estático.
 
 ## Comandos
 
@@ -128,9 +206,18 @@ A configuração é lida **primeiro via variáveis de ambiente**, recorrendo a `
 | `/agent-glance:test` | Envia um quadro (ou percorre os três) para verificar a renderização |
 | `/agent-glance:restore` | Devolve o dispositivo ao seu relógio e fotos originais |
 
+Algumas opções são **apenas flags CLI** (sem comando de barra) — persistem em `~/.agent-glance/config.json`, espelhando `--ip`:
+
+| Flag | O que faz |
+|---|---|
+| `--ip <IP>` | salva o IP do dispositivo |
+| `--preset default\|hosts\|custom` | alterna o modo de exibição (ver [Modo GIF](#modo-gif-e-predefinições)) |
+| `--layout frame\|fullscreen` | layout do modo gif (`frame` mantém cabeçalho+rodapé; `fullscreen` é somente o GIF) |
+| `--test [state] [subtitle]` | envia um quadro; respeita a predefinição atual, então também pré-visualiza o modo gif |
+
 ## Como funciona
 
-Esse firmware **não tem API de texto**, então não há nada para "imprimir". Em vez disso, o script renderiza um GIF de 240×240 com Pillow e o envia para o álbum de fotos do dispositivo, tornando essa imagem a única foto habilitada e o Photo o único tema habilitado — assim o quadro fica fixo em vez de girar para outro tema.
+Esse firmware **não tem API de texto**, então não há nada para "imprimir". Em vez disso, o script renderiza um GIF de 240×240 com Pillow e o envia para o álbum de fotos do dispositivo, tornando essa imagem a única foto habilitada e o Photo o único tema habilitado — assim o quadro fica fixo em vez de girar para outro tema. O decodificador de GIF do firmware também reproduz GIFs **animados**, então no modo gif o script compõe um GIF multiquadro e o dispositivo o reproduz em loop localmente — um upload por estado, sem tráfego por quadro.
 
 ```
 host lifecycle hook (JSON on stdin)

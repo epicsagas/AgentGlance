@@ -25,30 +25,6 @@
         ]
       }
     ],
-    "PreToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "p=$(ls -d \"$HOME\"/.codex/plugins/cache/epicsagas/agent-glance/*/scripts/agent_glance.py 2>/dev/null | sort -V | tail -1); [ -n \"$p\" ] && python3 \"$p\"",
-            "timeout": 10,
-            "statusMessage": "SmallTV: working"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "p=$(ls -d \"$HOME\"/.codex/plugins/cache/epicsagas/agent-glance/*/scripts/agent_glance.py 2>/dev/null | sort -V | tail -1); [ -n \"$p\" ] && python3 \"$p\"",
-            "timeout": 10,
-            "statusMessage": "SmallTV: working"
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [

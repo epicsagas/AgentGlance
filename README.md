@@ -115,6 +115,98 @@ Config is read **env-var first**, falling back to `~/.agent-glance/config.json` 
 |---|---|---|
 | `AGENT_GLANCE_IP` | device IP — **required** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | context window used to scale the % bar | `200000` |
+| `AGENT_GLANCE_PRESET` | display preset: `default` \| `hosts` \| `custom` | `hosts` |
+| `AGENT_GLANCE_LAYOUT` | gif-mode layout: `frame` \| `fullscreen` | `frame` |
+
+### GIF mode & presets
+
+> [!WARNING]
+> **Warning on GIF Size**: If a GIF file is too large, it places heavy strain on the device's memory (ESP8266 RAM/Flash) and may cause unexpected reboots or crashes. Please keep your GIFs strictly within the recommended specifications (**< 100 KB** recommended).
+
+The default mode is the static status frame described above. Set a different preset to switch to **gif mode**, which composites a looping animated GIF (character in the middle, header + status footer kept) that the device plays locally — one upload per state, no per-frame network traffic. State is still signalled by the top accent bar + background colour.
+
+| Preset | What it shows |
+|---|---|
+| `default` | Static frame (the original behaviour) |
+| `hosts` | A bundled per-host character GIF in the middle; header + footer kept |
+| `custom` | Your own GIFs, per host and/or per state (see schema) |
+
+Pick a preset with the `--preset` CLI flag (it persists to `config.json`, like `--ip`):
+
+```
+python3 scripts/agent_glance.py --preset hosts
+```
+
+`hosts` ships with neutral placeholders in `assets/hosts/` so it works immediately. To use your own character, drop a GIF into the user directory — it takes precedence over the bundled one, and the screen updates on the next state push (no restart):
+
+```bash
+mkdir -p ~/.agent-glance/gifs/hosts
+cp my-character.gif ~/.agent-glance/gifs/hosts/claude-code.gif
+```
+
+Name the file after the host it should replace (lowercase, spaces → hyphens):
+
+| Detected host | Override filename |
+|---|---|
+| Claude Code | `claude-code.gif` |
+| Codex | `codex.gif` |
+| Antigravity | `antigravity.gif` |
+| Hermes | `hermes.gif` |
+| any other host | `agent.gif` |
+
+### Optimal GIF Specifications
+
+| Parameter | `frame` Layout | `fullscreen` Layout |
+|---|---|---|
+| **Optimal Resolution** | **224 × 116 px** (~1.93:1) or **116 × 116 px** (1:1) | **240 × 240 px** (1:1 square) |
+| **Composite Target** | Fits inside `MIDDLE_BOX = (8, 46, 224, 116)` | Covers entire 1.54" SmallTV screen |
+| **Recommended File Size** | **< 100 KB** (Hard max < 300 KB to avoid ESP8266 RAM/OOM crashes & reboots) |
+| **Frame Count** | **12 – 16 frames** (Script downsamples exceeding frames to `_MAX_FRAMES = 16`) |
+| **Frame Delay** | **80ms – 150ms** per frame (1.2s – 2.0s loop) |
+| **Color Palette** | **64 – 128 colors** (optimizes rendering speed & Flash wear) |
+
+**Shrinking a source GIF to spec** (raw exports easily hit multi-MB): sample frames evenly across the whole clip, then re-encode at a short target loop so the full range of motion survives even though playback speed is compressed.
+
+1 — sample ~14 frames evenly across the source, cropped/scaled per layout:
+
+```bash
+# frame layout: letterboxed into MIDDLE_BOX, so just scale down (no crop needed)
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=224:116:force_original_aspect_ratio=decrease" \
+  -vsync 0 frames/f_%03d.png
+
+# fullscreen layout: stretched to fill 240x240, so crop to square first or it'll distort
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=240:240:force_original_aspect_ratio=increase,crop=240:240" \
+  -vsync 0 frames/f_%03d.png
+```
+
+`STEP` = source frame count ÷ 14 (rounded down) — ffprobe the source (`ffprobe -v error -select_streams v -show_entries stream=nb_frames -of default=nw=1 source.gif`) to get it.
+
+2 — re-encode the sampled frames at a short target loop (10fps = 100ms/frame ≈ 1.4s loop for 14 frames) with a small palette:
+
+```bash
+ffmpeg -framerate 10 -i frames/f_%03d.png \
+  -vf "split[s0][s1];[s0]palettegen=max_colors=64:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer" \
+  output.gif
+```
+
+Still over 300 KB? Drop `max_colors` to 32 (try `dither=none` too) before cutting frame count — that's what actually keeps the loop expensive.
+
+`custom` reads `display.gifs` from `config.json`. Each host entry is either a path string (one GIF for all states) or a per-state map; `"default"` is the fallback. Any entry can also be `{"path": ..., "layout": "fullscreen"}` to go full-screen for that one:
+
+```json
+"display": {
+  "preset": "custom",
+  "layout": "frame",
+  "gifs": {
+    "default": "/abs/path/fallback.gif",
+    "claude code": { "working": "a.gif", "waiting": "b.gif", "done": "c.gif" },
+    "codex": "/one-gif-for-all-states.gif",
+    "agent": { "path": "x.gif", "layout": "fullscreen" }
+  }
+}
+```
+
+Resolution order per push: `gifs[host][state]` → `gifs[host]` → `gifs["default"]` → bundled hosts placeholder. A missing or unreadable GIF never blanks the screen — it falls back to the static frame.
 
 ## Commands
 
@@ -125,9 +217,18 @@ Config is read **env-var first**, falling back to `~/.agent-glance/config.json` 
 | `/agent-glance:test` | Push a frame (or cycle all three) to check rendering |
 | `/agent-glance:restore` | Put the device back to its original clock and photos |
 
+A few options are **CLI flags only** (no slash command) — they persist to `~/.agent-glance/config.json`, mirroring `--ip`:
+
+| Flag | What it does |
+|---|---|
+| `--ip <IP>` | save the device IP |
+| `--preset default\|hosts\|custom` | switch display mode (see [GIF mode](#gif-mode--presets)) |
+| `--layout frame\|fullscreen` | gif-mode layout (frame keeps header+footer; fullscreen is the GIF only) |
+| `--test [state] [subtitle]` | push a frame; respects the current preset, so it previews gif mode too |
+
 ## How it works
 
-The firmware has **no text API**, so there is nothing to "print" to. Instead the script renders a 240×240 GIF with Pillow and pushes it into the device's Photo album, with that image as the only enabled photo and Photo as the only enabled theme — so the frame stays put instead of rotating away.
+The firmware has **no text API**, so there is nothing to "print" to. Instead the script renders a 240×240 GIF with Pillow and pushes it into the device's Photo album, with that image as the only enabled photo and Photo as the only enabled theme — so the frame stays put instead of rotating away. The firmware's GIF decoder also plays **animated** GIFs, so in gif mode the script composites a multi-frame GIF and the device loops it locally — one upload per state, no per-frame traffic.
 
 ```
 host lifecycle hook (JSON on stdin)

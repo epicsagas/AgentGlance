@@ -113,8 +113,65 @@ first prompt after enabling animates the display.
 |---|---|
 | `--setup` | Take over device (backup + Photo-only mode + first frame) |
 | `--restore` | Revert device to the pre-setup themes/photos |
-| `--test working\|waiting\|done [subtitle]` | Manual push (uses newest local transcript for metrics) |
+| `--test working\|waiting\|done [subtitle]` | Manual push (uses newest local transcript for metrics; respects the current preset, so it previews gif mode) |
 | `--ip <IP>` | Save IP to `~/.agent-glance/config.json` (alternative to the env var) |
+| `--preset default\|hosts\|custom` | Switch display mode (`default` = static frame; others = animated gif mode) |
+| `--layout frame\|fullscreen` | gif-mode layout: `frame` keeps header+footer; `fullscreen` is the GIF only |
+
+## GIF mode (optional)
+
+> [!WARNING]
+> **GIF Size Warning**: GIFs that are too large place heavy strain on ESP8266 RAM/Flash, leading to instability or unexpected device reboots. Keep files strictly within specs (**< 100 KB** recommended).
+
+Beyond the static status frame, gif mode composites a **looping animated GIF** (character in the middle, header + status footer kept) that the firmware decodes and plays locally — one upload per state, no per-frame network traffic. State is still shown via the top accent bar + background colour.
+
+```bash
+# bundled neutral per-host character placeholders (work out of the box):
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --preset hosts
+```
+
+To replace a character with the user's own GIF (wins over bundled; updates on the next push, no restart), drop it in the user dir named for the host — `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, or `agent.gif` for any other host:
+
+```bash
+mkdir -p ~/.agent-glance/gifs/hosts
+cp my-character.gif ~/.agent-glance/gifs/hosts/claude-code.gif
+```
+
+`custom` lets the user map their own GIFs per host and per state in `~/.agent-glance/config.json`:
+
+```json
+"display": { "preset": "custom", "layout": "frame",
+  "gifs": { "default": "/path/fallback.gif",
+            "claude code": { "working": "a.gif", "waiting": "b.gif", "done": "c.gif" } } }
+```
+
+A missing or unreadable GIF falls back to the static frame — the screen never blanks. See the repo README for the full resolution order.
+
+### Optimal GIF Specifications
+
+| Parameter | Frame Layout | Fullscreen Layout |
+|---|---|---|
+| **Optimal Resolution** | **224 × 116 px** (1.93:1) or **116 × 116 px** (1:1) | **240 × 240 px** (1:1) |
+| **Middle Box Target** | `(8, 46, 224, 116)` | Covers full screen |
+| **Recommended File Size** | **< 100 KB** (Hard max < 300 KB to prevent ESP8266 RAM/OOM crashes & reboots) |
+| **Frame Count** | **12 – 16 frames** (Script downsamples exceeding frames to `_MAX_FRAMES = 16`) |
+| **Frame Delay** | **80ms – 150ms** per frame (1.2s – 2.0s loop) |
+| **Colors** | **64 – 128 colors** |
+
+**Shrinking an oversized source GIF** (raw exports easily hit multi-MB): sample ~14 frames evenly across the whole clip (preserves full motion range), then re-encode at a short target loop (compresses playback speed only — don't just fps-downsample, that keeps the original's slow duration and blows the loop-length spec):
+
+```bash
+# 1) sample frames, cropped/scaled per layout (STEP = source nb_frames / 14, rounded down)
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=224:116:force_original_aspect_ratio=decrease" -vsync 0 frames/f_%03d.png   # frame layout
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=240:240:force_original_aspect_ratio=increase,crop=240:240" -vsync 0 frames/f_%03d.png   # fullscreen layout (crop to square — it's stretched to fill, not letterboxed)
+
+# 2) re-encode at 10fps (100ms/frame) with a small palette
+ffmpeg -framerate 10 -i frames/f_%03d.png \
+  -vf "split[s0][s1];[s0]palettegen=max_colors=64:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer" \
+  output.gif
+```
+
+Still over 300 KB → drop `max_colors` to 32 before cutting frame count.
 
 ## Verified device API (SD_RU / SD Pro)
 

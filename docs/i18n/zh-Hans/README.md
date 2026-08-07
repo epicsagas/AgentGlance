@@ -118,6 +118,84 @@ python3 <plugin>/scripts/agent_glance.py --setup
 |---|---|---|
 | `AGENT_GLANCE_IP` | 设备 IP —— **必填** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | 用于缩放百分比条的上下文窗口大小 | `200000` |
+| `AGENT_GLANCE_PRESET` | 显示预设：`default` \| `hosts` \| `custom` | `hosts` |
+| `AGENT_GLANCE_LAYOUT` | gif 模式布局：`frame` \| `fullscreen` | `frame` |
+
+### GIF 模式与预设
+
+> [!WARNING]
+> **GIF 体积注意事项**: 过大的 GIF 文件会对设备内存（ESP8266 RAM/Flash）造成巨大负担，可能导致意外重启或崩溃。请务必将文件保持在 **< 100 KB** 以内。
+
+默认模式就是上文描述的静态状态帧。选择其他预设会切换到 **gif 模式**:脚本会合成一张循环播放的动画 GIF(角色居中,顶部 header 与底部状态 footer 保留),由设备在本地播放 —— 每个状态只上传一次,没有逐帧的网络流量。状态仍通过顶部的强调色条与背景色来指示。
+
+| 预设 | 显示内容 |
+|---|---|
+| `default` | 静态帧(原有行为) |
+| `hosts` | 中间显示自带的按宿主区分的角色 GIF,header + footer 保留 |
+| `custom` | 你自己的 GIF,可按宿主和/或按状态映射(见 schema) |
+
+用 `--preset` CLI 标志选择预设(与 `--ip` 一样会持久化到 `config.json`):
+
+```
+python3 scripts/agent_glance.py --preset hosts
+```
+
+`hosts` 在 `assets/hosts/` 中附带中性的占位图。把 `<host>.gif` 放到 `~/.agent-glance/gifs/hosts/` 即可覆盖某一个(例如 `claude-code.gif`、`codex.gif`、`antigravity.gif`、`hermes.gif`、`agent.gif`) —— 用户文件优先于自带文件。
+
+### GIF 最佳规格与推荐参数
+
+| 参数 | `frame` 布局 | `fullscreen` 布局 |
+|---|---|---|
+| **最佳分辨率** | **224 × 116 px** (宽高比约 1.93:1) 或 **116 × 116 px** (1:1 正方形) | **240 × 240 px** (1:1 正方形) |
+| **合成目标区域** | 自动适应内嵌于 `MIDDLE_BOX = (8, 46, 224, 116)` | 覆盖 1.54 英寸 SmallTV 整个屏幕 |
+| **推荐文件大小** | **< 100 KB** (硬性上限 < 300 KB，以防止 ESP8266 RAM/OOM 崩溃及重启) |
+| **帧数** | **12 – 16 帧** (超出部分渲染器将自动抽帧降采样至 `_MAX_FRAMES = 16`) |
+| **帧延迟** | **80ms – 150ms** / 帧 (1.2秒 – 2.0秒循环) |
+| **调色板** | **64 – 128 色** (优化渲染速度与 Flash 闪存寿命) |
+
+**将源 GIF 压缩到规格范围**(未处理的原始导出很容易达到几 MB):在整段素材中均匀采样帧,再以较短的目标循环重新编码,即使播放速度被压缩,完整的动作幅度依然保留。
+
+1 — 按布局裁剪/缩放,从源文件中均匀采样约 14 帧:
+
+```bash
+# frame 布局:以信箱方式嵌入 MIDDLE_BOX,只需缩小即可(无需裁剪)
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=224:116:force_original_aspect_ratio=decrease" \
+  -vsync 0 frames/f_%03d.png
+
+# fullscreen 布局:会被拉伸填满 240x240,所以要先裁成正方形,否则会变形
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=240:240:force_original_aspect_ratio=increase,crop=240:240" \
+  -vsync 0 frames/f_%03d.png
+```
+
+`STEP` = 源文件帧数 ÷ 14(向下取整)— 用 ffprobe 获取源文件帧数(`ffprobe -v error -select_streams v -show_entries stream=nb_frames -of default=nw=1 source.gif`)。
+
+2 — 以较短的目标循环(10fps = 每帧 100ms ≈ 14 帧约 1.4 秒循环)和小调色板重新编码采样出的帧:
+
+```bash
+ffmpeg -framerate 10 -i frames/f_%03d.png \
+  -vf "split[s0][s1];[s0]palettegen=max_colors=64:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer" \
+  output.gif
+```
+
+还是超过 300 KB?先把 `max_colors` 降到 32(也可以试试 `dither=none`),再考虑减少帧数——真正拖累体积的是调色板,不是帧数。
+
+
+`custom` 会读取 `config.json` 中的 `display.gifs`。每个 host 条目要么是一个路径字符串(所有状态共用同一张 GIF),要么是一张按状态映射的表;`"default"` 是回退项。任何条目也可以写成 `{"path": ..., "layout": "fullscreen"}`,让该条目单独以全屏方式显示:
+
+```json
+"display": {
+  "preset": "custom",
+  "layout": "frame",
+  "gifs": {
+    "default": "/abs/path/fallback.gif",
+    "claude code": { "working": "a.gif", "waiting": "b.gif", "done": "c.gif" },
+    "codex": "/one-gif-for-all-states.gif",
+    "agent": { "path": "x.gif", "layout": "fullscreen" }
+  }
+}
+```
+
+每次推送时的解析顺序:`gifs[host][state]` → `gifs[host]` → `gifs["default"]` → 自带的 hosts 占位图。GIF 缺失或不可读时绝不会让屏幕变黑 —— 会回退到静态帧。
 
 ## 命令
 
@@ -128,9 +206,18 @@ python3 <plugin>/scripts/agent_glance.py --setup
 | `/agent-glance:test` | 推送一帧(或依次循环三种状态)以检查渲染效果 |
 | `/agent-glance:restore` | 把设备恢复到原来的时钟和照片状态 |
 
+有几个选项**仅作为 CLI 标志**提供(没有对应的斜杠命令),它们与 `--ip` 一样持久化到 `~/.agent-glance/config.json`:
+
+| 标志 | 作用 |
+|---|---|
+| `--ip <IP>` | 保存设备 IP |
+| `--preset default\|hosts\|custom` | 切换显示模式(见 [GIF 模式](#gif-模式与预设)) |
+| `--layout frame\|fullscreen` | gif 模式布局(`frame` 保留 header+footer;`fullscreen` 仅显示 GIF) |
+| `--test [state] [subtitle]` | 推送一帧;遵循当前预设,因此也可用于预览 gif 模式 |
+
 ## 工作原理
 
-该固件**没有文本 API**,所以根本没有可以"打印"的对象。脚本会改为用 Pillow 渲染一张 240×240 的 GIF,推送到设备的 Photo 相册中,并把这张图片设为唯一启用的照片、Photo 设为唯一启用的主题 —— 这样画面就会固定不变,不会被轮换掉。
+该固件**没有文本 API**,所以根本没有可以"打印"的对象。脚本会改为用 Pillow 渲染一张 240×240 的 GIF,推送到设备的 Photo 相册中,并把这张图片设为唯一启用的照片、Photo 设为唯一启用的主题 —— 这样画面就会固定不变,不会被轮换掉。该固件的 GIF 解码器也能播放**动画** GIF,所以在 gif 模式下脚本会合成一张多帧 GIF,由设备在本地循环播放 —— 每个状态只上传一次,没有逐帧流量。
 
 ```
 host lifecycle hook (JSON on stdin)

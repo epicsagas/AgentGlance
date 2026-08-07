@@ -118,6 +118,100 @@ La configuration est lue **d'abord via les variables d'environnement**, puis ret
 |---|---|---|
 | `AGENT_GLANCE_IP` | IP de l'appareil — **obligatoire** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | fenêtre de contexte utilisée pour mettre à l'échelle la barre de % | `200000` |
+| `AGENT_GLANCE_PRESET` | preset d'affichage : `default` \| `hosts` \| `custom` | `hosts` |
+| `AGENT_GLANCE_LAYOUT` | disposition du mode gif : `frame` \| `fullscreen` | `frame` |
+
+### Mode GIF et presets
+
+> [!WARNING]
+> **Avertissement sur la taille des GIF** : Les fichiers GIF volumineux sollicitent fortement la mémoire de l'appareil (RAM/Flash de l'ESP8266) et peuvent provoquer des redémarrages ou des plantages inattendus. Veillez à maintenir vos fichiers sous **< 100 KB**.
+
+Le mode par défaut est l'image statique décrite ci-dessus. Choisir un autre preset bascule en **mode gif**, qui compose un GIF animé en boucle (personnage au centre, en-tête + pied de page d'état conservés) lu localement par l'appareil — un envoi par état, pas de trafic réseau par image. L'état reste signalé par la barre d'accent en haut + la couleur de fond.
+
+| Preset | Ce qu'il affiche |
+|---|---|
+| `default` | Image statique (le comportement d'origine) |
+| `hosts` | Un GIF de personnage par hôte, fourni avec le plugin, au centre ; en-tête + pied de page conservés |
+| `custom` | Vos propres GIFs, par hôte et/ou par état (voir le schéma) |
+
+Choisissez un preset avec le flag CLI `--preset` (il persiste dans `config.json`, comme `--ip`) :
+
+```
+python3 scripts/agent_glance.py --preset hosts
+```
+
+`hosts` est livré avec des placeholders neutres dans `assets/hosts/` afin de fonctionner immédiatement. Pour utiliser votre propre personnage, déposez un GIF dans le répertoire utilisateur — il prend le pas sur celui fourni, et l'écran se met à jour au prochain envoi d'état (pas de redémarrage) :
+
+```bash
+mkdir -p ~/.agent-glance/gifs/hosts
+cp my-character.gif ~/.agent-glance/gifs/hosts/claude-code.gif
+```
+
+Nommez le fichier d'après l'hôte qu'il doit remplacer (minuscules, espaces → tirets) :
+
+| Hôte détecté | Fichier de remplacement |
+|---|---|
+| Claude Code | `claude-code.gif` |
+| Codex | `codex.gif` |
+| Antigravity | `antigravity.gif` |
+| Hermes | `hermes.gif` |
+| tout autre hôte | `agent.gif` |
+
+### Spécifications GIF optimales
+
+| Paramètre | Mise en page `frame` | Mise en page `fullscreen` |
+|---|---|---|
+| **Résolution optimale** | **224 × 116 px** (~1,93:1) ou **116 × 116 px** (1:1) | **240 × 240 px** (carré 1:1) |
+| **Cible de composition** | S'insère dans `MIDDLE_BOX = (8, 46, 224, 116)` | Couvre tout l'écran 1.54" du SmallTV |
+| **Taille de fichier recommandée** | **< 100 KB** (Maximum strict < 300 KB pour éviter les plantages RAM/OOM et redémarrages ESP8266) |
+| **Nombre d'images** | **12 – 16 images** (le moteur de rendu sous-échantillonne au-delà de `_MAX_FRAMES = 16`) |
+| **Délai d'image** | **80ms – 150ms** par image (boucle de 1.2s – 2.0s) |
+| **Palette de couleurs** | **64 – 128 couleurs** (optimise la vitesse de rendu et l'usure de la mémoire Flash) |
+
+**Réduire un GIF source à la spécification** (les exports bruts dépassent facilement plusieurs Mo) : échantillonner des images uniformément sur tout le clip, puis réencoder avec une boucle courte pour préserver toute l'amplitude du mouvement même si la vitesse de lecture est compressée.
+
+1 — échantillonner ~14 images uniformément depuis la source, recadrées/redimensionnées selon la mise en page :
+
+```bash
+# mise en page frame : incrustée en letterbox dans MIDDLE_BOX, donc juste réduire l'échelle (pas besoin de recadrer)
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=224:116:force_original_aspect_ratio=decrease" \
+  -vsync 0 frames/f_%03d.png
+
+# mise en page fullscreen : étirée pour remplir 240x240, donc recadrer en carré d'abord sinon ça déforme
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=240:240:force_original_aspect_ratio=increase,crop=240:240" \
+  -vsync 0 frames/f_%03d.png
+```
+
+`STEP` = nombre d'images de la source ÷ 14 (arrondi à l'inférieur) — utiliser ffprobe sur la source (`ffprobe -v error -select_streams v -show_entries stream=nb_frames -of default=nw=1 source.gif`) pour l'obtenir.
+
+2 — réencoder les images échantillonnées avec une boucle courte (10fps = 100ms/image ≈ 1,4s de boucle pour 14 images) et une petite palette :
+
+```bash
+ffmpeg -framerate 10 -i frames/f_%03d.png \
+  -vf "split[s0][s1];[s0]palettegen=max_colors=64:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer" \
+  output.gif
+```
+
+Toujours au-dessus de 300 KB ? Réduire `max_colors` à 32 (essayer aussi `dither=none`) avant de réduire le nombre d'images — c'est ce qui coûte réellement cher dans la boucle.
+
+
+
+`custom` lit `display.gifs` dans `config.json`. Chaque entrée d'hôte est soit une chaîne de chemin (un seul GIF pour tous les états), soit une map par état ; `"default"` est le fallback. Chaque entrée peut aussi être `{"path": ..., "layout": "fullscreen"}` pour passer en plein écran sur celle-là :
+
+```json
+"display": {
+  "preset": "custom",
+  "layout": "frame",
+  "gifs": {
+    "default": "/abs/path/fallback.gif",
+    "claude code": { "working": "a.gif", "waiting": "b.gif", "done": "c.gif" },
+    "codex": "/one-gif-for-all-states.gif",
+    "agent": { "path": "x.gif", "layout": "fullscreen" }
+  }
+}
+```
+
+Ordre de résolution à chaque envoi : `gifs[host][state]` → `gifs[host]` → `gifs["default"]` → placeholder hosts fourni. Un GIF manquant ou illisible ne vide jamais l'écran — il retombe sur l'image statique.
 
 ## Commandes
 
@@ -128,9 +222,18 @@ La configuration est lue **d'abord via les variables d'environnement**, puis ret
 | `/agent-glance:test` | Envoie une image (ou fait défiler les trois) pour vérifier le rendu |
 | `/agent-glance:restore` | Remet l'appareil dans son état d'horloge et de photos d'origine |
 
+Quelques options sont **des flags CLI uniquement** (pas de commande slash) — elles persistent dans `~/.agent-glance/config.json`, comme `--ip` :
+
+| Flag | Ce qu'elle fait |
+|---|---|
+| `--ip <IP>` | enregistre l'IP de l'appareil |
+| `--preset default\|hosts\|custom` | bascule le mode d'affichage (voir [Mode GIF](#mode-gif-et-presets)) |
+| `--layout frame\|fullscreen` | disposition du mode gif (`frame` conserve en-tête+pied de page ; `fullscreen` = GIF uniquement) |
+| `--test [state] [subtitle]` | envoie une image ; respecte le preset courant, donc prévisualise aussi le mode gif |
+
 ## Fonctionnement
 
-Ce firmware n'a **pas d'API texte**, il n'y a donc rien à "afficher" à proprement parler. Le script génère à la place un GIF 240×240 avec Pillow et le télécharge dans l'album photo de l'appareil, en faisant de cette image la seule photo activée et de Photo le seul thème activé — de sorte que l'image reste fixe au lieu de tourner.
+Ce firmware n'a **pas d'API texte**, il n'y a donc rien à "afficher" à proprement parler. Le script génère à la place un GIF 240×240 avec Pillow et le télécharge dans l'album photo de l'appareil, en faisant de cette image la seule photo activée et de Photo le seul thème activé — de sorte que l'image reste fixe au lieu de tourner. Le décodeur GIF du firmware lit aussi les GIFs **animés**, donc en mode gif le script compose un GIF multi-frames que l'appareil lit en boucle localement — un envoi par état, pas de trafic par image.
 
 ```
 host lifecycle hook (JSON on stdin)

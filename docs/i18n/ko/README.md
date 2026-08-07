@@ -118,6 +118,100 @@ python3 <plugin>/scripts/agent_glance.py --setup
 |---|---|---|
 | `AGENT_GLANCE_IP` | 기기 IP — **필수** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | 퍼센트 바 스케일링에 쓰이는 컨텍스트 윈도우 크기 | `200000` |
+| `AGENT_GLANCE_PRESET` | 화면 프리셋: `default` \| `hosts` \| `custom` | `hosts` |
+| `AGENT_GLANCE_LAYOUT` | gif 모드 레이아웃: `frame` \| `fullscreen` | `frame` |
+
+### GIF 모드와 프리셋
+
+> [!WARNING]
+> **GIF 용량 관련 주의사항**: GIF 용량이 너무 크면 기기 메모리(ESP8266 RAM/Flash)에 과도한 부하가 걸려 재부팅(Reboot)되는 등 기기가 불안정해질 수 있습니다. 아래 권장 사양(**100 KB 미만**)을 반드시 지켜주세요.
+
+기본 모드는 위에서 설명한 정적 상태 프레임입니다. 다른 프리셋을 선택하면 **gif 모드**로 전환되어, 중간에 캐릭터가 들어가고 헤더와 상태 푸터는 유지한 채 루프 애니메이션 GIF를 합성합니다. 기기가 이를 로컬에서 재생하므로 상태별로 업로드는 한 번이고 프레임별 네트워크 트래픽은 없습니다. 상태는 상단 액센트 바 + 배경색으로 여전히 표시됩니다.
+
+| 프리셋 | 표시 내용 |
+|---|---|
+| `default` | 정적 프레임 (기존 동작) |
+| `hosts` | 번들된 호스트별 캐릭터 GIF를 중간에 표시, 헤더·푸터 유지 |
+| `custom` | 사용자 지정 GIF, 호스트별/상태별 매핑 (스키마 참고) |
+
+프리셋은 `--preset` CLI 플래그로 선택합니다 (`--ip`처럼 `config.json`에 저장됨):
+
+```
+python3 scripts/agent_glance.py --preset hosts
+```
+
+`hosts`는 `assets/hosts/`에 중립 플레이스홀더를 기본 제공하므로 바로 동작합니다. 직접 캐릭터를 쓰려면 GIF 파일을 사용자 디렉터리에 넣으세요 — 번들 파일보다 우선 적용되며, 다음 상태 푸시 때 화면에 반영됩니다 (재시작 불필요):
+
+```bash
+mkdir -p ~/.agent-glance/gifs/hosts
+cp 내캐릭터.gif ~/.agent-glance/gifs/hosts/claude-code.gif
+```
+
+파일명은 바꿀 호스트 이름으로 (소문자, 공백 → 하이픈):
+
+| 감지된 호스트 | 오버라이드 파일명 |
+|---|---|
+| Claude Code | `claude-code.gif` |
+| Codex | `codex.gif` |
+| Antigravity | `antigravity.gif` |
+| Hermes | `hermes.gif` |
+| 그 외 호스트 | `agent.gif` |
+
+### GIF 최적 규격 및 권장 사양
+
+| 항목 | `frame` 레이아웃 | `fullscreen` 레이아웃 |
+|---|---|---|
+| **최적 해상도** | **224 × 116 px** (비율 ~1.93:1) 또는 **116 × 116 px** (1:1) | **240 × 240 px** (1:1 정사각형) |
+| **합성 영역** | `MIDDLE_BOX = (8, 46, 224, 116)` 내부 맞춤 | SmallTV 1.54인치 전체 화면 덮음 |
+| **권장 파일 용량** | **100 KB 미만** (ESP8266 RAM/OOM 방지 및 기기 재부팅 예방을 위해 최대 300 KB 미만) |
+| **프레임 수** | **12 – 16 프레임** (렌더러에서 `_MAX_FRAMES = 16`으로 자동 다운샘플링) |
+| **프레임 딜레이** | **80ms – 150ms** / 프레임당 (1.2초 – 2.0초 루프) |
+| **색상 팔레트** | **64 – 128 Colors** (렌더링 속도 최적화 및 플래시 메모리 보호) |
+
+**원본 GIF를 스펙에 맞게 줄이기** (가공 전 원본은 쉽게 수 MB를 넘음): 전체 구간에서 프레임을 고르게 샘플링한 뒤 짧은 목표 루프로 재인코딩하면, 재생 속도는 압축돼도 동작 범위는 그대로 살아남는다.
+
+1 — 레이아웃에 맞춰 크롭/스케일하면서 원본에서 ~14프레임을 고르게 샘플링:
+
+```bash
+# frame 레이아웃: MIDDLE_BOX 안에 레터박스로 들어가므로 그냥 축소만 하면 됨 (크롭 불필요)
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=224:116:force_original_aspect_ratio=decrease" \
+  -vsync 0 frames/f_%03d.png
+
+# fullscreen 레이아웃: 240x240으로 늘려 채우므로 먼저 정사각형으로 크롭 안 하면 찌그러짐
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=240:240:force_original_aspect_ratio=increase,crop=240:240" \
+  -vsync 0 frames/f_%03d.png
+```
+
+`STEP` = 원본 프레임 수 ÷ 14 (내림) — ffprobe로 확인 (`ffprobe -v error -select_streams v -show_entries stream=nb_frames -of default=nw=1 source.gif`).
+
+2 — 샘플링한 프레임을 짧은 목표 루프(10fps = 프레임당 100ms ≈ 14프레임 기준 1.4초 루프)와 작은 팔레트로 재인코딩:
+
+```bash
+ffmpeg -framerate 10 -i frames/f_%03d.png \
+  -vf "split[s0][s1];[s0]palettegen=max_colors=64:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer" \
+  output.gif
+```
+
+그래도 300 KB 넘으면, 프레임 수 줄이기 전에 `max_colors`를 32로 낮춰라 (`dither=none`도 시도) — 루프 용량을 실제로 좌우하는 건 그쪽이다.
+
+
+
+`custom`은 `config.json`의 `display.gifs`를 읽습니다. 각 호스트 항목은 경로 문자열(모든 상태에 동일한 GIF)이거나 상태별 맵이며, `"default"`는 폴백입니다. 각 항목은 `{"path": ..., "layout": "fullscreen"}` 형태로 해당 항목만 전체화면으로 지정할 수도 있습니다:
+
+```json
+"display": {
+  "preset": "custom",
+  "layout": "frame",
+  "gifs": {
+    "default": "/절대경로/fallback.gif",
+    "claude code": { "working": "a.gif", "waiting": "b.gif", "done": "c.gif" },
+    "codex": "/모든-상태-동일.gif",
+    "agent": { "path": "x.gif", "layout": "fullscreen" }
+  }
+}
+```
+
+푸시 시 해석 순서: `gifs[host][state]` → `gifs[host]` → `gifs["default"]` → 번들 hosts 플레이스홀더. 없거나 읽을 수 없는 GIF는 화면을 비우지 않고 정적 프레임으로 폴백합니다.
 
 ## 명령어
 
@@ -128,9 +222,18 @@ python3 <plugin>/scripts/agent_glance.py --setup
 | `/agent-glance:test` | 프레임 하나(또는 세 가지 모두)를 전송해 렌더링 확인 |
 | `/agent-glance:restore` | 기기를 원래의 시계·사진 상태로 되돌림 |
 
+일부 옵션은 **CLI 플래그 전용**입니다 (슬래시 명령어 없음). `--ip`처럼 `~/.agent-glance/config.json`에 저장됩니다:
+
+| 플래그 | 동작 |
+|---|---|
+| `--ip <IP>` | 기기 IP 저장 |
+| `--preset default\|hosts\|custom` | 화면 모드 전환 ([GIF 모드](#gif-모드와-프리셋) 참고) |
+| `--layout frame\|fullscreen` | gif 모드 레이아웃 (`frame`은 헤더+푸터 유지, `fullscreen`은 GIF만) |
+| `--test [state] [subtitle]` | 프레임 전송, 현재 프리셋을 따르므로 gif 모드 미리보기에도 쓰임 |
+
 ## 동작 원리
 
-이 펌웨어에는 **텍스트 API가 없어서**, "출력"할 대상 자체가 없습니다. 대신 스크립트가 Pillow로 240×240 GIF를 렌더링해 기기의 Photo 앨범에 넣고, 그 이미지를 유일하게 활성화된 사진으로, Photo를 유일하게 활성화된 테마로 만들어 — 화면이 다른 테마로 돌아가지 않고 고정되도록 합니다.
+이 펌웨어에는 **텍스트 API가 없어서**, "출력"할 대상 자체가 없습니다. 대신 스크립트가 Pillow로 240×240 GIF를 렌더링해 기기의 Photo 앨범에 넣고, 그 이미지를 유일하게 활성화된 사진으로, Photo를 유일하게 활성화된 테마로 만들어 — 화면이 다른 테마로 돌아가지 않고 고정되도록 합니다. 이 펌웨어의 GIF 디코더는 **애니메이션** GIF도 재생하므로, gif 모드에서는 멀티프레임 GIF를 합성해 기기가 로컬에서 루프로 재생합니다 — 상태별 업로드 한 번, 프레임별 트래픽은 없습니다.
 
 ```
 host lifecycle hook (JSON on stdin)

@@ -15,7 +15,7 @@ Driven by Claude Code hooks (reads the hook JSON object from stdin).
   agent_glance.py --test working|waiting|done [subtitle]
   agent_glance.py --flush-queue           # (internal) detached worker: debounce + single upload
 """
-import sys, os, json, time, mimetypes, uuid, subprocess, glob, re
+import sys, os, json, time, mimetypes, uuid, subprocess, glob, re, math, shutil, hashlib
 import urllib.request, urllib.parse, urllib.error
 from contextlib import contextmanager
 from PIL import Image, ImageDraw, ImageFont
@@ -34,6 +34,15 @@ TMP_DIR = os.environ.get("TEMP") or "/tmp"
 TMP_GIF = os.path.join(TMP_DIR, "agent_status.gif")
 THROTTLE_PATH = os.path.join(TMP_DIR, "agent_glance_last.json")
 ERRLOG = os.path.join(TMP_DIR, "agent_glance_error.log")
+
+
+def _log_err(label, exc):
+    """Best-effort append to ERRLOG; never raises."""
+    try:
+        with open(ERRLOG, "a") as fh:
+            fh.write("{} {}: {}\n".format(time.strftime("%Y-%m-%d %H:%M:%S"), label, exc))
+    except Exception:
+        pass
 # Race-resolution state: events from independent hook processes land here, a
 # single detached worker drains them under a device lock so only the
 # highest-priority, latest state reaches the device.
@@ -46,6 +55,20 @@ STATUS_FILE = "agent_status.gif"     # fixed name -> overwrites itself (bounded 
 PHOTO_THEME_ID = 2                # "Фото" theme on SD_RU firmware
 THROTTLE_SEC = 8                  # skip re-push of identical state within this window
 
+# Frame geometry (rendered output is always 240x240).
+W = H = 240
+CX = W // 2
+
+# GIF mode: per-host character GIFs, composited into the middle of the chrome.
+USER_GIF_DIR = os.path.join(STATE_DIR, "gifs")           # ~/.agent-glance/gifs
+USER_HOSTS_DIR = os.path.join(USER_GIF_DIR, "hosts")     # user overrides (precedence)
+USER_ANIME_DIR = os.path.join(USER_GIF_DIR, "anime")
+GIF_CACHE_DIR = os.path.join(USER_GIF_DIR, ".cache")     # normalized sources (one per src+layout)
+BUNDLED_GIF_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "assets", "gif"))
+BUNDLED_HOSTS_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "assets", "hosts"))
+_MAX_FRAMES = 16      # bound output size / decode time / flash wear
+_MIN_FRAME_MS = 50    # floor; below this the device stutters
+
 # State precedence: when competing events coalesce in the debounce window, the
 # highest-priority one wins (ties broken by recency). `done` outranks a late
 # `waiting` so the screen never flips back to APPROVAL after a Stop.
@@ -56,12 +79,22 @@ STATE_PRIORITY = {"done": 3, "working": 2, "waiting": 1}
 def load_config():
     # Env vars take precedence (portable across machines + plugin installs);
     # config.json is an optional local fallback for the personal setup.
-    cfg = {"ip": "", "context_limit": 200000}
+    cfg = {"ip": "", "context_limit": 200000,
+           "display": {"preset": "hosts", "layout": "frame", "gifs": {}}}
     if os.path.exists(CONFIG_PATH):
         try:
             cfg.update(json.load(open(CONFIG_PATH)))
         except Exception:
             pass
+    # Shallow cfg.update can replace the whole "display" dict; normalize so the
+    # nested keys always exist with sane defaults.
+    d = cfg.get("display")
+    if not isinstance(d, dict):
+        d = {}
+    d.setdefault("preset", "hosts")
+    d.setdefault("layout", "frame")
+    d.setdefault("gifs", {})
+    cfg["display"] = d
     if os.environ.get("AGENT_GLANCE_IP"):
         cfg["ip"] = os.environ["AGENT_GLANCE_IP"]
     if os.environ.get("AGENT_GLANCE_CONTEXT_LIMIT"):
@@ -69,7 +102,222 @@ def load_config():
             cfg["context_limit"] = int(os.environ["AGENT_GLANCE_CONTEXT_LIMIT"])
         except Exception:
             pass
+    if os.environ.get("AGENT_GLANCE_PRESET"):
+        cfg["display"]["preset"] = os.environ["AGENT_GLANCE_PRESET"].strip().lower()
+    if os.environ.get("AGENT_GLANCE_LAYOUT"):
+        cfg["display"]["layout"] = os.environ["AGENT_GLANCE_LAYOUT"].strip().lower()
     return cfg
+
+
+def _host_filename(host):
+    """Map a detect_host() label to its GIF stem, e.g. "claude code" -> claude-code.gif."""
+    return host.replace(" ", "-").lower() + ".gif"
+
+
+def _unpack_entry(entry, default_layout):
+    """A custom gifs entry is either a path string or {"path":..,"layout":..}.
+
+    A relative path is resolved against USER_GIF_DIR (~/.agent-glance/gifs) so
+    users can just drop files there; an absolute path is used as-is for
+    anyone keeping GIFs elsewhere.
+    """
+    if isinstance(entry, dict):
+        path, layout = entry.get("path"), entry.get("layout", default_layout)
+    else:
+        path, layout = entry, default_layout
+    if path and not os.path.isabs(path):
+        path = os.path.join(USER_GIF_DIR, path)
+    return path, layout
+
+
+def _pick_state(entry, state):
+    """Pick the per-state candidate out of a gifs[host]/gifs["default"] value.
+
+    A per-state map (e.g. {"working":..,"waiting":..,"done":..}) is keyed by
+    `state`, falling back to its own "default" sub-key; a flat entry (str, or
+    {"path":..,"layout":..}) applies to every state as-is.
+    """
+    if isinstance(entry, dict) and "path" not in entry:
+        return entry.get(state) or entry.get("default")
+    return entry
+
+
+def _resolve_char(preset, host, state, cfg):
+    """Resolve (char_path, layout) for this push, or (None, None) to fall back.
+
+    custom : gifs[host][state] -> gifs[host] (flat) -> gifs["default"][state] -> gifs["default"] (flat)
+    anime  : user anime override (fullscreen); else hosts placeholder fallback
+    hosts  : user override -> bundled placeholder
+    """
+    display = cfg.get("display", {})
+    gifs = display.get("gifs", {}) or {}
+    layout_default = display.get("layout", "frame")
+    stem = _host_filename(host)
+
+    if preset == "custom":
+        cand = _pick_state(gifs.get(host), state) if host in gifs else None
+        if not cand and "default" in gifs:
+            cand = _pick_state(gifs["default"], state)
+        if cand:
+            path, layout = _unpack_entry(cand, layout_default)
+            if path and os.path.exists(path):
+                return path, layout
+
+    if preset == "anime":
+        # Anime art is TBD ("지정 예정"). User override wins; otherwise fall
+        # through to the hosts placeholder so the screen never blanks.
+        user = os.path.join(USER_ANIME_DIR, stem)
+        if os.path.exists(user):
+            return user, "fullscreen"
+
+    # hosts preset, plus custom/anime fallback -> user override then bundled.
+    user = os.path.join(USER_HOSTS_DIR, stem)
+    if os.path.exists(user):
+        return user, layout_default
+    # Bundled real GIFs (assets/gif/) first, monogram placeholders (assets/hosts/) as final fallback.
+    for bdir in (BUNDLED_GIF_DIR, BUNDLED_HOSTS_DIR):
+        bundled = os.path.join(bdir, stem)
+        if os.path.exists(bundled):
+            return bundled, layout_default
+    return None, None
+
+
+# ---------------------------------------------------------------- gif normalizer (safety guard)
+# A user-supplied GIF can be arbitrary size/frame count; both upload paths can
+# then OOM the ESP8266 (fullscreen sends bytes verbatim; composite re-encodes
+# every frame as a full frame). _normalize_gif converts any source to spec
+# (<= ~16 frames, <= 300 KB, layout-correct dims), cached per source+layout.
+# Already-compliant sources pass through untouched (zero cost, lossless).
+# ffmpeg is a soft dependency — without it, the source is returned as-is and
+# the device relies on render_gif's _MAX_FRAMES cap alone (no regression).
+_MAX_BYTES = 300_000
+# _NORM_TARGET_FRAMES < _MAX_FRAMES intentionally: normalized sources land at
+# ~14 frames so they stay comfortably below the runtime cap (16), leaving
+# headroom for any off-by-one in step rounding without triggering a re-sample
+# inside render_gif's _load_gif_frames.
+_NORM_TARGET_FRAMES = 14
+
+_FFMPEG_BIN = None  # memoized by _have_ffmpeg
+
+
+def _have_ffmpeg():
+    global _FFMPEG_BIN
+    if _FFMPEG_BIN is None:
+        _FFMPEG_BIN = shutil.which("ffmpeg") or False
+    return _FFMPEG_BIN
+
+
+def _gif_meta(path):
+    """(width, height, n_frames) via ffprobe, or None if ffprobe unavailable/fails."""
+    binp = shutil.which("ffprobe")
+    if not binp:
+        return None
+    try:
+        out = subprocess.check_output(
+            [binp, "-v", "error", "-select_streams", "v",
+             "-show_entries", "stream=width,height,nb_frames",
+             "-of", "default=noprint_wrappers=1:nokey=1", path],
+            timeout=8,
+        ).decode().split()
+        w, h, n = int(out[0]), int(out[1]), int(out[2]) if len(out) > 2 else 1
+        return w, h, n
+    except Exception:
+        return None
+
+
+def _is_compliant(path, layout):
+    """True if a source already meets spec and needs no normalization."""
+    try:
+        if os.path.getsize(path) > _MAX_BYTES:
+            return False
+    except OSError:
+        return False
+    meta = _gif_meta(path)
+    if not meta:
+        return False  # can't prove it; let the normalizer try
+    w, h, n = meta
+    if n > _MAX_FRAMES:
+        return False
+    if layout == "fullscreen":
+        return (w, h) == (W, H)
+    # frame layout: must fit inside MIDDLE_BOX
+    return w <= 224 and h <= 116
+
+
+def _norm_key(path, layout):
+    h = hashlib.md5(
+        "{}|{}|{}|{}|v1".format(
+            os.path.abspath(path),
+            int(os.path.getmtime(path)),
+            os.path.getsize(path),
+            layout,
+        ).encode()
+    ).hexdigest()[:16]
+    return h
+
+
+def _ffmpeg_normalize(src, layout, out, max_colors):
+    """One ffmpeg pass: even frame sampling + crop/scale + small palette. True on success."""
+    meta = _gif_meta(src) or (None, None, None)
+    n = meta[2] if meta and meta[2] else None
+    step = max(1, round(n / _NORM_TARGET_FRAMES)) if n else 1
+    if layout == "fullscreen":
+        geom = "scale=240:240:force_original_aspect_ratio=increase,crop=240:240"
+    else:
+        geom = "scale=224:116:force_original_aspect_ratio=decrease"
+    vf = ("select='not(mod(n,{}))',{},split[s0][s1];"
+          "[s0]palettegen=max_colors={}:stats_mode=diff[p];"
+          "[s1][p]paletteuse=dither=bayer").format(step, geom, max_colors)
+    try:
+        proc = subprocess.run(
+            [_have_ffmpeg(), "-y", "-i", src, "-vf", vf, "-vsync", "0", out],
+            timeout=30,
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        )
+        if proc.returncode != 0:
+            _log_err("ffmpeg", (proc.stderr or b"").decode(errors="replace")[-300:])
+            return False
+        return os.path.exists(out) and os.path.getsize(out) > 0
+    except Exception as e:
+        _log_err("ffmpeg", e)
+        return False
+
+
+def _normalize_gif(src, layout):
+    """Return a spec-compliant path for `src`, caching the result. Soft-dep ffmpeg."""
+    if not src or not os.path.exists(src):
+        return src
+    if not _have_ffmpeg():
+        return src  # no ffmpeg -> trust render_gif's _MAX_FRAMES cap (no regression)
+    if _is_compliant(src, layout):
+        return src  # already good (e.g. hand-tuned) -> pass through lossless
+    try:
+        os.makedirs(GIF_CACHE_DIR, exist_ok=True)
+    except OSError:
+        return src
+    key = _norm_key(src, layout)
+    cached = os.path.join(GIF_CACHE_DIR, key + ".gif")
+    meta_path = os.path.join(GIF_CACHE_DIR, key + ".meta.json")
+    # cache hit
+    if os.path.exists(cached) and os.path.exists(meta_path):
+        try:
+            if json.load(open(meta_path)).get("key") == key:
+                return cached
+        except Exception:
+            pass
+    # cache miss -> normalize (64 colors, fall back to 32 if still heavy)
+    tmp = cached + ".tmp"
+    ok = _ffmpeg_normalize(src, layout, tmp, 64)
+    if ok and os.path.getsize(tmp) > _MAX_BYTES:
+        ok = _ffmpeg_normalize(src, layout, tmp, 32)
+    if not ok or not os.path.exists(tmp):
+        return src  # ffmpeg failed -> don't block the push
+    try:
+        os.replace(tmp, cached)
+        json.dump({"key": key}, open(meta_path, "w"))
+        return cached
+    except OSError:
+        return src
 
 
 def base_url():
@@ -267,7 +515,9 @@ def _resolve_state_key(ev, data):
         tool = (data.get("toolCall") or {}).get("name") or data.get("tool_name") or data.get("tool") or ""
         if tool == "ask_permission":
             return "waiting"
-        return "working"
+        # Tool hooks can fire dozens of times in one turn. The working
+        # transition is already reported by UserPromptSubmit/PreInvocation.
+        return None
     return EVENT_STATE.get(ev)
 
 
@@ -400,6 +650,9 @@ def _fmt(n):
 MODEL_LIMIT_PATTERNS = [
     (r"gemini-?2\.[59]-?pro|gemini-?1\.5-?pro|gemini-?2-?pro", 2_000_000),
     (r"gemini", 1_000_000),
+    # Claude Max records these aliases in the transcript rather than a context
+    # limit. Keep the specific 1M variants ahead of the generic Claude fallback.
+    (r"claude[-_\s]*(?:opus|fable)(?:[-_\s]|$)", 1_000_000),
     (r"claude", 200_000),
     (r"gpt-4|codex|deepseek|qwen", 128_000),
     (r"o1|o3", 200_000),
@@ -422,45 +675,107 @@ def _estimate_tokens(text):
     return max(1, int(len(str(text)) / 3.5))
 
 
-def parse_transcript(path=None, cwd=None):
-    """Pull model + token usage from session transcript JSONL across hosts."""
+def _apply_agy_status_cache(info, cwd, fallback_limit):
+    """Use agy's live status cache only for an agy invocation.
+
+    This cache mirrors agy's TUI exactly, but is shared at a fixed path.  It
+    must never be consulted by Claude/Codex or their display inherits agy's
+    model and token counters.
+    """
+    cache_file = os.path.expanduser("~/.agent-glance/last_status.json")
+    if not os.path.exists(cache_file):
+        return False
+    try:
+        cache_data = json.load(open(cache_file))
+        cache_cwd = (cache_data.get("workspace") or {}).get("current_dir") or cache_data.get("cwd")
+        if cwd and cache_cwd and os.path.abspath(cwd) != os.path.abspath(cache_cwd):
+            return False
+        cw = cache_data.get("context_window") or {}
+        m = cache_data.get("model") or {}
+        c_in = cw.get("total_input_tokens") or cw.get("input_tokens") or 0
+        c_out = cw.get("total_output_tokens") or cw.get("output_tokens") or 0
+        c_pct = cw.get("used_percentage")
+        c_limit = cw.get("context_window_size") or cw.get("max_tokens")
+        c_model = m.get("id") or m.get("display_name")
+        if c_pct is None and not c_in and not c_out:
+            return False
+        if c_model:
+            info["model"] = str(c_model)
+        info["limit"] = int(c_limit or resolve_model_context_limit(info["model"], fallback_limit))
+        info["cum_in"], info["cum_out"] = int(c_in), int(c_out)
+        if c_pct is not None:
+            info["pct"] = int(round(float(c_pct)))
+            info["ctx"] = int(info["limit"] * info["pct"] / 100)
+        else:
+            info["ctx"] = info["cum_in"] + info["cum_out"]
+            info["pct"] = min(100, round(info["ctx"] / info["limit"] * 100)) if info["limit"] else 0
+        return True
+    except Exception:
+        return False
+
+
+def _codex_model(payload):
+    """Extract Codex's selected model from any of its session event shapes."""
+    state = payload.get("state") or {}
+    settings = payload.get("thread_settings") or {}
+    collaboration = payload.get("collaboration_mode") or {}
+    return (payload.get("model") or state.get("model") or settings.get("model")
+            or (collaboration.get("settings") or {}).get("model")
+            or ((state.get("collaboration_mode") or {}).get("model")))
+
+
+def _parse_codex_transcript(path, info, fallback_limit):
+    """Parse exact model/context/token counters emitted in Codex JSONL."""
+    latest_total = latest_turn = None
+    peak_ctx = 0
+    try:
+        with open(path, errors="ignore") as fh:
+            for line in fh:
+                try:
+                    event = json.loads(line)
+                except Exception:
+                    continue
+                payload = event.get("payload") or {}
+                model = _codex_model(payload)
+                if model:
+                    info["model"] = str(model)
+                usage_info = payload.get("info") or {}
+                total = usage_info.get("total_token_usage")
+                turn = usage_info.get("last_token_usage")
+                if isinstance(total, dict):
+                    latest_total = total
+                if isinstance(turn, dict):
+                    latest_turn = turn
+                    turn_ctx = int(turn.get("total_tokens") or turn.get("input_tokens") or 0)
+                    if peak_ctx > 10000 and turn_ctx < peak_ctx * 0.75:
+                        info["compacted"] = True
+                    peak_ctx = max(peak_ctx, turn_ctx)
+                limit = usage_info.get("model_context_window") or payload.get("model_context_window")
+                if limit:
+                    info["limit"] = int(limit)
+    except Exception:
+        return info
+
+    # `input_tokens` and `output_tokens` are already inclusive totals in the
+    # Codex event schema. Cached/reasoning fields are informative subsets, not
+    # values to add again.
+    if latest_total:
+        info["cum_in"] = int(latest_total.get("input_tokens") or 0)
+        info["cum_out"] = int(latest_total.get("output_tokens") or 0)
+    if latest_turn:
+        info["ctx"] = int(latest_turn.get("total_tokens") or latest_turn.get("input_tokens") or 0)
+    info["limit"] = info.get("limit") or resolve_model_context_limit(info["model"], fallback_limit)
+    return info
+
+
+def parse_transcript(path=None, cwd=None, host=None):
+    """Pull model + token usage from the invoking host's session data only."""
     fallback_limit = load_config().get("context_limit", 200000)
     info = {"model": "-", "ctx": 0, "cum_in": 0, "cum_out": 0, "compacted": False, "limit": fallback_limit}
+    host = host or detect_host()
 
-    # Check live status cache (~/.agent-glance/last_status.json) for 100% exact parity with TUI
-    cache_file = os.path.expanduser("~/.agent-glance/last_status.json")
-    if os.path.exists(cache_file):
-        try:
-            with open(cache_file) as cf:
-                cache_data = json.load(cf)
-            cache_cwd = (cache_data.get("workspace") or {}).get("current_dir") or cache_data.get("cwd")
-            if not cwd or not cache_cwd or os.path.basename(cwd.rstrip("/")) == os.path.basename(cache_cwd.rstrip("/")):
-                cw = cache_data.get("context_window") or {}
-                m = cache_data.get("model") or {}
-                c_in = cw.get("total_input_tokens") or cw.get("input_tokens") or 0
-                c_out = cw.get("total_output_tokens") or cw.get("output_tokens") or 0
-                c_pct = cw.get("used_percentage")
-                c_limit = cw.get("context_window_size") or cw.get("max_tokens")
-                c_model = m.get("id") or m.get("display_name")
-
-                if c_pct is not None or c_in or c_out:
-                    if c_model:
-                        info["model"] = str(c_model)
-                    if c_limit:
-                        info["limit"] = int(c_limit)
-                    else:
-                        info["limit"] = resolve_model_context_limit(info["model"], fallback_limit)
-                    info["cum_in"] = int(c_in)
-                    info["cum_out"] = int(c_out)
-                    if c_pct is not None:
-                        info["pct"] = int(round(float(c_pct)))
-                        info["ctx"] = int(info["limit"] * info["pct"] / 100)
-                    else:
-                        info["ctx"] = info["cum_in"] + info["cum_out"]
-                        info["pct"] = min(100, round(info["ctx"] / info["limit"] * 100)) if info["limit"] else 0
-                    return info
-        except Exception:
-            pass
+    if host == "antigravity" and _apply_agy_status_cache(info, cwd, fallback_limit):
+        return info
 
     if not path or not os.path.exists(path):
         candidates = []
@@ -468,16 +783,17 @@ def parse_transcript(path=None, cwd=None):
 
         all_claude = glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl"))
         all_agy = glob.glob(os.path.expanduser("~/.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript.jsonl"))
-        all_codex = glob.glob(os.path.expanduser("~/.codex/sessions/*/*.jsonl")) + glob.glob(os.path.expanduser("~/.codex/*/*.jsonl"))
+        all_codex = glob.glob(os.path.expanduser("~/.codex/sessions/**/*.jsonl"), recursive=True)
 
+        host_files = {
+            "claude code": all_claude,
+            "codex": all_codex,
+            "antigravity": all_agy,
+        }.get(host, all_claude + all_agy + all_codex)
         if proj_name:
-            candidates.extend([p for p in all_claude if proj_name in p])
-            candidates.extend([p for p in all_codex if proj_name in p])
-            if not candidates and ("antigravity" in proj_name.lower() or "agentglance" in proj_name.lower()):
-                candidates.extend(all_agy)
-
+            candidates = [p for p in host_files if proj_name in p]
         if not candidates:
-            candidates = all_claude + all_agy + all_codex
+            candidates = host_files
 
         if candidates:
             candidates.sort(key=os.path.getmtime)
@@ -488,7 +804,10 @@ def parse_transcript(path=None, cwd=None):
     if not os.path.exists(path):
         return info
 
-    is_agy = "antigravity-cli" in path or ".system_generated" in path
+    is_agy = host == "antigravity" or "antigravity-cli" in path or ".system_generated" in path
+    is_codex = host == "codex" or "/.codex/" in path
+    if is_codex:
+        return _parse_codex_transcript(path, info, fallback_limit)
     peak_in = 0
     last_u = None
 
@@ -508,11 +827,9 @@ def parse_transcript(path=None, cwd=None):
                     tool_calls = json.dumps(o.get("tool_calls", [])) if o.get("tool_calls") else ""
 
                     if stype in ("USER_INPUT", "SYSTEM") and "Model Selection" in content:
-                        for line_c in content.splitlines():
-                            if line_c.strip().startswith("Model Selection"):
-                                parts = line_c.split("to ")
-                                if len(parts) > 1:
-                                    info["model"] = parts[1].rstrip(".").strip()
+                        match = re.search(r"Model Selection.*?\bto\s+(.+?)(?:\.\s|\.$|$)", content, re.S)
+                        if match:
+                            info["model"] = match.group(1).strip()
 
                     if stype == "CHECKPOINT":
                         info["compacted"] = True
@@ -587,46 +904,19 @@ def get_context_tier_color(pct):
         return (120, 230, 160)
 
 
-def render(state, sub=None, info=None, out=TMP_GIF):
-    s = STATES.get(state, STATES["working"])
-    info = info or {}
-    W = H = 240
-    img = Image.new("RGB", (W, H), s["bg"])
-    d = ImageDraw.Draw(img)
-    cx = W // 2
-
+def _draw_header(d, s, info):
+    """Top accent bar + project · host header + divider. Shared chrome."""
     d.rectangle([0, 0, W, 6], fill=s["fg"])              # top accent bar
-
-    # ---- header: project · host (top, bold, large) ----
     host = detect_host()
     proj = info.get("project") or project_name()
     fhead = _font(18, True, cjk=True)
     head = _foot_str(d, host, proj, fhead, 216)
-    d.text((cx, 26), head, font=fhead, fill=(240, 240, 240), anchor="mm")
+    d.text((CX, 26), head, font=fhead, fill=(240, 240, 240), anchor="mm")
     d.line([(16, 42), (224, 42)], fill=s["fg"], width=1)  # divider under header
 
-    # ---- status: dot + label inline on one row ----
-    flab = _font(26, True)
-    label_w = d.textlength(s["label"], font=flab)
-    dot_r = 6
-    gap = 16
-    row_w = dot_r * 2 + gap + label_w          # dot + gap + text
-    rx = cx - row_w / 2                         # left edge of the row
-    dot_cx = rx + dot_r                         # dot center
-    status_y = 68
-    d.ellipse([dot_cx - dot_r, status_y - dot_r, dot_cx + dot_r, status_y + dot_r], fill=s["fg"])
-    if s["pulse"]:
-        d.ellipse([dot_cx - dot_r - 4, status_y - dot_r - 4,
-                   dot_cx + dot_r + 4, status_y + dot_r + 4], outline=s["fg"], width=2)
-    d.text((dot_cx + dot_r + gap, status_y), s["label"], font=flab, fill=s["fg"], anchor="lm")
 
-    sub = (sub or "").strip() or s["sub"]
-    fsub = _font(18, cjk=True)
-    y = 100                                     # margin below the status row
-    for ln in _wrap(sub, fsub, 200, d, max_lines=3):
-        d.text((cx, y), ln, font=fsub, fill=(225, 225, 225), anchor="mm")
-        y += 22
-
+def _draw_footer(d, s, info):
+    """Bottom metrics block (model / context % / usage bar / tokens). Shared chrome."""
     # ---- metrics block: flush to the bottom, generous row spacing ----
     limit = info.get("limit") or resolve_model_context_limit(info.get("model"), load_config().get("context_limit", 200000))
     ctx = info.get("ctx", 0)
@@ -636,7 +926,7 @@ def render(state, sub=None, info=None, out=TMP_GIF):
     # token row, flush to the bottom edge
     ftn = _font(12, False)
     d.text((16, 228), "in {}".format(_fmt(info.get("cum_in", 0))), font=ftn, fill=(185, 185, 185), anchor="lm")
-    d.text((cx, 228), "{}/{}".format(_fmt(ctx), _fmt(limit)), font=ftn, fill=(220, 220, 220), anchor="mm")
+    d.text((CX, 228), "{}/{}".format(_fmt(ctx), _fmt(limit)), font=ftn, fill=(220, 220, 220), anchor="mm")
     d.text((224, 228), "out {}".format(_fmt(info.get("cum_out", 0))), font=ftn, fill=(185, 185, 185), anchor="rm")
 
     # Tier-based dynamic color for context bar & percentage label
@@ -659,7 +949,146 @@ def render(state, sub=None, info=None, out=TMP_GIF):
     # divider capping the whole metrics block
     d.line([(16, 166), (224, 166)], fill=s["fg"], width=1)
 
+
+def render(state, sub=None, info=None, out=TMP_GIF):
+    s = STATES.get(state, STATES["working"])
+    info = info or {}
+    img = Image.new("RGB", (W, H), s["bg"])
+    d = ImageDraw.Draw(img)
+    _draw_header(d, s, info)
+
+    # ---- status: dot + label inline on one row (default mode middle) ----
+    flab = _font(26, True)
+    label_w = d.textlength(s["label"], font=flab)
+    dot_r = 6
+    gap = 16
+    row_w = dot_r * 2 + gap + label_w          # dot + gap + text
+    rx = CX - row_w / 2                         # left edge of the row
+    dot_cx = rx + dot_r                         # dot center
+    status_y = 68
+    d.ellipse([dot_cx - dot_r, status_y - dot_r, dot_cx + dot_r, status_y + dot_r], fill=s["fg"])
+    if s["pulse"]:
+        d.ellipse([dot_cx - dot_r - 4, status_y - dot_r - 4,
+                   dot_cx + dot_r + 4, status_y + dot_r + 4], outline=s["fg"], width=2)
+    d.text((dot_cx + dot_r + gap, status_y), s["label"], font=flab, fill=s["fg"], anchor="lm")
+
+    sub = (sub or "").strip() or s["sub"]
+    fsub = _font(18, cjk=True)
+    y = 100                                     # margin below the status row
+    for ln in _wrap(sub, fsub, 200, d, max_lines=3):
+        d.text((CX, y), ln, font=fsub, fill=(225, 225, 225), anchor="mm")
+        y += 22
+
+    _draw_footer(d, s, info)
     img.save(out, "GIF")
+    return out
+
+
+# Middle zone where the character GIF is composited in "frame" layout:
+# between the header divider (y=42) and the footer divider (y=166).
+MIDDLE_BOX = (8, 46, 224, 116)   # (x, y, w, h)
+
+
+def _load_gif_frames(path):
+    """Return [(RGB frame, duration_ms), ...] from an animated (or static) GIF.
+
+    Coalesces disposal so every returned frame is a full source-resolution
+    image (handles delta-encoded and transparent GIFs correctly).
+    """
+    frames = []
+    with Image.open(path) as im:
+        n = getattr(im, "n_frames", 1) or 1
+        canvas = None
+        prev_disposal = 0
+        for i in range(n):
+            im.seek(i)
+            dur = max(_MIN_FRAME_MS, int(im.info.get("duration") or 100))
+            disposal = im.info.get("disposal", 0)
+            frame_rgba = im.convert("RGBA")
+            # Apply the *previous* frame's disposal before compositing the
+            # current one (GIF89a spec: disposal describes what to do with
+            # the frame *after* it has been shown, i.e. before the next).
+            if canvas is None or prev_disposal == 2:
+                canvas = Image.new("RGBA", im.size, (0, 0, 0, 0))
+            canvas = Image.alpha_composite(canvas, frame_rgba)
+            frames.append((canvas.convert("RGB"), dur))
+            prev_disposal = disposal
+    if not frames:
+        raise ValueError("no frames in " + path)
+    if len(frames) > _MAX_FRAMES:
+        stride = math.ceil(len(frames) / _MAX_FRAMES)
+        frames = frames[::stride][:_MAX_FRAMES]
+    return frames
+
+
+def _contain_box(src_w, src_h, box):
+    """Aspect-preserving fit inside box=(x,y,w,h); returns paste (x,y,w,h)."""
+    bx, by, bw, bh = box
+    scale = min(bw / src_w, bh / src_h)
+    w = max(1, int(src_w * scale))
+    h = max(1, int(src_h * scale))
+    x = bx + (bw - w) // 2
+    y = by + (bh - h) // 2
+    return x, y, w, h
+
+
+def _build_chrome_base(state, info, layout):
+    """Static chrome drawn once: state-colored bg + (frame layout) header/footer."""
+    s = STATES.get(state, STATES["working"])
+    img = Image.new("RGB", (W, H), s["bg"])
+    if layout == "frame":
+        d = ImageDraw.Draw(img)
+        _draw_header(d, s, info)
+        _draw_footer(d, s, info)
+    return img, s
+
+
+def render_gif(state, sub=None, info=None, char_path=None, layout="frame", out=TMP_GIF):
+    """Compose an animated GIF: state-colored chrome + character frames.
+
+    The device loops the result locally, so only one upload is needed per push.
+    Falls back to the caller (raise) on any error so push_state can render static.
+    """
+    info = info or {}
+    # Fullscreen + source already fills the 240x240 frame: the state-colored
+    # base is fully covered, so recompositing only bloats the payload (PIL
+    # re-encodes every frame as a full frame, destroying the source's
+    # inter-frame delta compression — a 200 KB source can upload as 450 KB).
+    # Send the source bytes verbatim and skip the round-trip through PIL.
+    if layout == "fullscreen":
+        try:
+            with Image.open(char_path) as probe:
+                if probe.size == (W, H):
+                    with open(char_path, "rb") as fh:
+                        data = fh.read()
+                    if data[:6] in (b"GIF87a", b"GIF89a"):
+                        with open(out, "wb") as fh:
+                            fh.write(data)
+                        return out
+        except Exception:
+            pass  # fall through to the compositing path
+    src_frames = _load_gif_frames(char_path)
+    chrome_base, _s = _build_chrome_base(state, info, layout)
+
+    out_frames, durations = [], []
+    for src, dur in src_frames:
+        base = chrome_base.copy()
+        if layout == "fullscreen":
+            base.paste(src.resize((W, H), Image.LANCZOS), (0, 0))
+        else:
+            x, y, w, h = _contain_box(src.width, src.height, MIDDLE_BOX)
+            base.paste(src.resize((w, h), Image.LANCZOS), (x, y))
+        out_frames.append(base)
+        durations.append(dur)
+
+    out_frames[0].save(
+        out, "GIF",
+        save_all=True,
+        append_images=out_frames[1:],
+        loop=0,
+        duration=durations,
+        disposal=2,
+    )
     return out
 
 
@@ -669,25 +1098,49 @@ def _trim(text, n=40):
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
+def _last_pushed():
+    """Best-effort (state, key, t) of the most recent successful push, or (None, None, 0)."""
+    try:
+        prev = json.load(open(THROTTLE_PATH))
+        prev_key = prev.get("key", "")
+        prev_state = prev_key.split("|")[0] if "|" in prev_key else ""
+        return prev_state, prev.get("project"), prev_key, prev.get("t", 0)
+    except Exception:
+        return None, None, None, 0
+
+
 def push_state(state, sub=None, info=None):
     """Render + upload a state. Throttles identical re-pushes to spare flash."""
-    key = "{}|{}".format(state, sub or "")
+    cfg = load_config()
+    gif_mode = cfg["display"]["preset"] != "default"
+    # A GIF screen does not render hook subtitles. Their changing text must not
+    # turn one visible state into repeated full-GIF writes.
+    key = "{}|{}".format(state, "" if gif_mode else (sub or ""))
     now = time.time()
-    try:
-        if os.path.exists(THROTTLE_PATH):
-            prev = json.load(open(THROTTLE_PATH))
-            prev_key = prev.get("key", "")
-            prev_state = prev_key.split("|")[0] if "|" in prev_key else ""
-            # Only throttle if the state AND subtitle are identical. State transitions ALWAYS push!
-            if prev_state == state and prev_key == key and now - prev.get("t", 0) < THROTTLE_SEC:
-                return False  # identical state pushed recently -> skip
-    except Exception:
-        pass
+    project = (info or {}).get("project")
+    prev_state, prev_project, prev_key, prev_t = _last_pushed()
+    # State transitions always push; another project must receive its first frame.
+    if (prev_state == state and prev_key == key and prev_project == project
+            and now - prev_t < THROTTLE_SEC):
+        return False  # identical state pushed recently -> skip
 
-    gif = render(state, sub, info)
+    preset = cfg["display"]["preset"]
+    char_path, layout = (None, None)
+    if preset != "default":
+        char_path, layout = _resolve_char(preset, detect_host(), state, cfg)
+    if char_path:
+        char_path = _normalize_gif(char_path, layout)  # safety guard: bound size/frames (soft-dep ffmpeg)
+    if char_path:
+        try:
+            gif = render_gif(state, sub, info, char_path, layout)
+        except Exception as e:
+            _log_err("render_gif", e)
+            gif = render(state, sub, info)   # never blank the screen
+    else:
+        gif = render(state, sub, info)
     _upload_with_retry("/photo/upload", "file", gif)
     set_photo_enabled(STATUS_FILE, True)
-    json.dump({"key": key, "t": now}, open(THROTTLE_PATH, "w"))
+    json.dump({"key": key, "t": now, "project": project}, open(THROTTLE_PATH, "w"))
     return True
 
 
@@ -709,11 +1162,7 @@ def _flush_worker():
                 return
             push_state(final["state"], final.get("sub"), final.get("info"))
     except Exception as e:
-        try:
-            with open(ERRLOG, "a") as fh:
-                fh.write("{} flush: {}\n".format(time.strftime("%Y-%m-%d %H:%M:%S"), e))
-        except Exception:
-            pass
+        _log_err("flush", e)
 
 
 def _unix_detach(fn):
@@ -747,11 +1196,7 @@ def _win_detach_flush():
             creationflags=creationflags,
         )
     except Exception as e:
-        try:
-            with open(ERRLOG, "a") as fh:
-                fh.write("{} win_spawn: {}\n".format(time.strftime("%Y-%m-%d %H:%M:%S"), e))
-        except Exception:
-            pass
+        _log_err("win_spawn", e)
 
 
 def _spawn_flush():
@@ -835,10 +1280,7 @@ EVENT_STATE = {
     "PreInvocation":     "working",   # agy
     "Notification":      "waiting",   # claude
     "PermissionRequest": "waiting",   # codex
-    "PreToolUse":        "working",   # claude, codex, agy
-    "PostToolUse":       "working",   # claude, codex, agy
     "Stop":              "done",      # claude, codex, agy
-    "SubagentStop":      "done",      # claude, codex
 }
 
 
@@ -895,7 +1337,7 @@ def _maybe_emit_agy_contract(ev):
 def _build_info(data, tp):
     """Assemble the metrics block pushed with a state (model/tokens/project)."""
     cwd = data.get("cwd") or (data.get("workspacePaths") or [None])[0]
-    info = parse_transcript(tp, cwd=cwd)
+    info = parse_transcript(tp, cwd=cwd, host=detect_host())
     info["project"] = project_name(cwd)
     return info
 
@@ -953,6 +1395,24 @@ def main():
         # Internal detached worker entry point (Windows): debounce + single
         # upload. On Unix this is reached only if invoked directly.
         _flush_worker()
+    elif a == "--preset" and len(args) > 1:
+        val = args[1].strip().lower()
+        if val not in ("default", "hosts", "anime", "custom"):
+            print("preset must be one of: default | hosts | anime | custom")
+            return
+        cfg = load_config()
+        cfg["display"]["preset"] = val
+        json.dump(cfg, open(CONFIG_PATH, "w"), indent=2)
+        print("preset saved:", val, "— mode:", "default" if val == "default" else "gif (animated)")
+    elif a == "--layout" and len(args) > 1:
+        val = args[1].strip().lower()
+        if val not in ("frame", "fullscreen"):
+            print("layout must be: frame | fullscreen")
+            return
+        cfg = load_config()
+        cfg["display"]["layout"] = val
+        json.dump(cfg, open(CONFIG_PATH, "w"), indent=2)
+        print("layout saved:", val)
     else:
         print(__doc__)
 
@@ -961,9 +1421,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        try:
-            with open(ERRLOG, "a") as fh:
-                fh.write("{} {}\n".format(time.strftime("%Y-%m-%d %H:%M:%S"), e))
-        except Exception:
-            pass
+        _log_err("main", e)
     sys.exit(0)  # never block the hook
