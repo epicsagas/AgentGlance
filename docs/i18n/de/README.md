@@ -166,6 +166,33 @@ Benenne die Datei nach dem Host, den sie ersetzen soll (Kleinschreibung, Leerzei
 | **Frame-Verzögerung** | **80ms – 150ms** pro Frame (1,2s – 2,0s Schleife) |
 | **Farbpalette** | **64 – 128 Farben** (optimiert Rendering-Geschwindigkeit und Flash-Verschleiß) |
 
+**Ausgangs-GIF auf die Spezifikation verkleinern** (rohe Exporte landen leicht im mehrstelligen MB-Bereich): Frames gleichmäßig über den gesamten Clip verteilt entnehmen und dann mit einer kurzen Ziel-Schleife neu kodieren, damit der volle Bewegungsumfang erhalten bleibt, auch wenn die Wiedergabegeschwindigkeit komprimiert wird.
+
+1 — ~14 Frames gleichmäßig über die Quelle verteilt entnehmen, je nach Layout zugeschnitten/skaliert:
+
+```bash
+# frame-Layout: wird in MIDDLE_BOX eingepasst, also nur verkleinern (kein Zuschnitt nötig)
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=224:116:force_original_aspect_ratio=decrease" \
+  -vsync 0 frames/f_%03d.png
+
+# fullscreen-Layout: wird auf 240x240 gestreckt, also erst quadratisch zuschneiden, sonst verzerrt es
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=240:240:force_original_aspect_ratio=increase,crop=240:240" \
+  -vsync 0 frames/f_%03d.png
+```
+
+`STEP` = Anzahl der Quell-Frames ÷ 14 (abgerundet) — per ffprobe ermitteln (`ffprobe -v error -select_streams v -show_entries stream=nb_frames -of default=nw=1 source.gif`).
+
+2 — die entnommenen Frames mit einer kurzen Ziel-Schleife (10fps = 100ms/Frame ≈ 1,4s Schleife bei 14 Frames) und kleiner Palette neu kodieren:
+
+```bash
+ffmpeg -framerate 10 -i frames/f_%03d.png \
+  -vf "split[s0][s1];[s0]palettegen=max_colors=64:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer" \
+  output.gif
+```
+
+Immer noch über 300 KB? Erst `max_colors` auf 32 senken (auch `dither=none` probieren), bevor die Frame-Anzahl reduziert wird — das ist der eigentliche Kostentreiber der Schleife.
+
+
 
 `custom` liest `display.gifs` aus `config.json`. Jeder Host-Eintrag ist entweder ein Pfad-String (ein GIF für alle Status) oder eine pro-Status-Map; `"default"` ist der Fallback. Jeder Eintrag kann auch als `{"path": ..., "layout": "fullscreen"}` angegeben werden, um nur für diesen auf Full-Screen zu schalten:
 

@@ -151,6 +151,33 @@ python3 scripts/agent_glance.py --preset hosts
 | **Retraso de fotograma** | **80ms – 150ms** por fotograma (bucle de 1.2s – 2.0s) |
 | **Paleta de colores** | **64 – 128 colores** (optimiza la velocidad de renderizado y el desgaste de Flash) |
 
+**Reducir un GIF de origen a la especificación** (las exportaciones sin procesar fácilmente superan varios MB): muestrea fotogramas de forma uniforme en todo el clip y luego recodifica con un bucle corto para que se conserve el rango completo de movimiento aunque la velocidad de reproducción se comprima.
+
+1 — muestrea ~14 fotogramas de forma uniforme del origen, recortados/escalados según el diseño:
+
+```bash
+# diseño frame: se ajusta dentro de MIDDLE_BOX con letterbox, así que solo hay que reducir la escala (no hace falta recortar)
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=224:116:force_original_aspect_ratio=decrease" \
+  -vsync 0 frames/f_%03d.png
+
+# diseño fullscreen: se estira para llenar 240x240, así que recorta a cuadrado primero o se deformará
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=240:240:force_original_aspect_ratio=increase,crop=240:240" \
+  -vsync 0 frames/f_%03d.png
+```
+
+`STEP` = número de fotogramas de origen ÷ 14 (redondeado hacia abajo) — usa ffprobe en el origen (`ffprobe -v error -select_streams v -show_entries stream=nb_frames -of default=nw=1 source.gif`) para obtenerlo.
+
+2 — recodifica los fotogramas muestreados con un bucle corto (10fps = 100ms/fotograma ≈ 1.4s de bucle para 14 fotogramas) y una paleta pequeña:
+
+```bash
+ffmpeg -framerate 10 -i frames/f_%03d.png \
+  -vf "split[s0][s1];[s0]palettegen=max_colors=64:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer" \
+  output.gif
+```
+
+¿Sigue por encima de 300 KB? Baja `max_colors` a 32 (prueba también `dither=none`) antes de reducir el número de fotogramas — eso es lo que realmente encarece el bucle.
+
+
 `custom` lee `display.gifs` de `config.json`. Cada entrada de host es una cadena de ruta (un mismo GIF para todos los estados) o un mapa por estado; `"default"` es el fallback. Cualquier entrada puede ser también `{"path": ..., "layout": "fullscreen"}` para esa entrada concreta a pantalla completa:
 
 ```json

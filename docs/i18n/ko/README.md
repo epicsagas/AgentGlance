@@ -166,6 +166,33 @@ cp 내캐릭터.gif ~/.agent-glance/gifs/hosts/claude-code.gif
 | **프레임 딜레이** | **80ms – 150ms** / 프레임당 (1.2초 – 2.0초 루프) |
 | **색상 팔레트** | **64 – 128 Colors** (렌더링 속도 최적화 및 플래시 메모리 보호) |
 
+**원본 GIF를 스펙에 맞게 줄이기** (가공 전 원본은 쉽게 수 MB를 넘음): 전체 구간에서 프레임을 고르게 샘플링한 뒤 짧은 목표 루프로 재인코딩하면, 재생 속도는 압축돼도 동작 범위는 그대로 살아남는다.
+
+1 — 레이아웃에 맞춰 크롭/스케일하면서 원본에서 ~14프레임을 고르게 샘플링:
+
+```bash
+# frame 레이아웃: MIDDLE_BOX 안에 레터박스로 들어가므로 그냥 축소만 하면 됨 (크롭 불필요)
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=224:116:force_original_aspect_ratio=decrease" \
+  -vsync 0 frames/f_%03d.png
+
+# fullscreen 레이아웃: 240x240으로 늘려 채우므로 먼저 정사각형으로 크롭 안 하면 찌그러짐
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=240:240:force_original_aspect_ratio=increase,crop=240:240" \
+  -vsync 0 frames/f_%03d.png
+```
+
+`STEP` = 원본 프레임 수 ÷ 14 (내림) — ffprobe로 확인 (`ffprobe -v error -select_streams v -show_entries stream=nb_frames -of default=nw=1 source.gif`).
+
+2 — 샘플링한 프레임을 짧은 목표 루프(10fps = 프레임당 100ms ≈ 14프레임 기준 1.4초 루프)와 작은 팔레트로 재인코딩:
+
+```bash
+ffmpeg -framerate 10 -i frames/f_%03d.png \
+  -vf "split[s0][s1];[s0]palettegen=max_colors=64:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer" \
+  output.gif
+```
+
+그래도 300 KB 넘으면, 프레임 수 줄이기 전에 `max_colors`를 32로 낮춰라 (`dither=none`도 시도) — 루프 용량을 실제로 좌우하는 건 그쪽이다.
+
+
 
 `custom`은 `config.json`의 `display.gifs`를 읽습니다. 각 호스트 항목은 경로 문자열(모든 상태에同一 GIF)이거나 상태별 맵이며, `"default"`는 폴백입니다. 각 항목은 `{"path": ..., "layout": "fullscreen"}` 형태로 해당 항목만 전체화면으로 지정할 수도 있습니다:
 

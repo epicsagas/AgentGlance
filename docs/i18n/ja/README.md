@@ -151,6 +151,33 @@ python3 scripts/agent_glance.py --preset hosts
 | **フレームディレイ** | **80ms – 150ms** / フレーム (1.2秒 – 2.0秒ループ) |
 | **カラーパレット** | **64 – 128 色** (レンダリング速度最適化および Flash メモリ保護) |
 
+**元 GIF を規格まで縮小する**(未加工のエクスポートは簡単に数 MB を超えます): クリップ全体から均等にフレームをサンプリングし、短いターゲットループで再エンコードすることで、再生速度を圧縮しても動きの幅全体を保持します。
+
+1 — レイアウトに応じてクロップ/スケーリングしつつ、元動画から約14フレームを均等にサンプリング:
+
+```bash
+# frame レイアウト: MIDDLE_BOX にレターボックスで収まるので、縮小するだけでよい(クロップ不要)
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=224:116:force_original_aspect_ratio=decrease" \
+  -vsync 0 frames/f_%03d.png
+
+# fullscreen レイアウト: 240x240 に引き伸ばされるので、先に正方形にクロップしないと歪む
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=240:240:force_original_aspect_ratio=increase,crop=240:240" \
+  -vsync 0 frames/f_%03d.png
+```
+
+`STEP` = 元動画のフレーム数 ÷ 14(切り捨て)— ffprobe で取得(`ffprobe -v error -select_streams v -show_entries stream=nb_frames -of default=nw=1 source.gif`)。
+
+2 — サンプリングしたフレームを短いターゲットループ(10fps = 100ms/フレーム ≈ 14フレームで約1.4秒ループ)と小さいパレットで再エンコード:
+
+```bash
+ffmpeg -framerate 10 -i frames/f_%03d.png \
+  -vf "split[s0][s1];[s0]palettegen=max_colors=64:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer" \
+  output.gif
+```
+
+それでも300 KBを超える場合は、フレーム数を減らす前に `max_colors` を32に下げる(`dither=none` も試す)— ループのコストを実際に左右するのはそこ。
+
+
 `custom` は `config.json` の `display.gifs` を読みます。各ホストのエントリは、パス文字列(全状態で1つの GIF)または状態別マップのいうずれかで、`"default"` はフォールバックです。また、どのエントリも `{"path": ..., "layout": "fullscreen"}` の形で、そのエントリだけをフルスクリーンにすることもできます:
 
 ```json

@@ -151,6 +151,33 @@ python3 scripts/agent_glance.py --preset hosts
 | **帧延迟** | **80ms – 150ms** / 帧 (1.2秒 – 2.0秒循环) |
 | **调色板** | **64 – 128 色** (优化渲染速度与 Flash 闪存寿命) |
 
+**将源 GIF 压缩到规格范围**(未处理的原始导出很容易达到几 MB):在整段素材中均匀采样帧,再以较短的目标循环重新编码,即使播放速度被压缩,完整的动作幅度依然保留。
+
+1 — 按布局裁剪/缩放,从源文件中均匀采样约 14 帧:
+
+```bash
+# frame 布局:以信箱方式嵌入 MIDDLE_BOX,只需缩小即可(无需裁剪)
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=224:116:force_original_aspect_ratio=decrease" \
+  -vsync 0 frames/f_%03d.png
+
+# fullscreen 布局:会被拉伸填满 240x240,所以要先裁成正方形,否则会变形
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=240:240:force_original_aspect_ratio=increase,crop=240:240" \
+  -vsync 0 frames/f_%03d.png
+```
+
+`STEP` = 源文件帧数 ÷ 14(向下取整)— 用 ffprobe 获取源文件帧数(`ffprobe -v error -select_streams v -show_entries stream=nb_frames -of default=nw=1 source.gif`)。
+
+2 — 以较短的目标循环(10fps = 每帧 100ms ≈ 14 帧约 1.4 秒循环)和小调色板重新编码采样出的帧:
+
+```bash
+ffmpeg -framerate 10 -i frames/f_%03d.png \
+  -vf "split[s0][s1];[s0]palettegen=max_colors=64:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer" \
+  output.gif
+```
+
+还是超过 300 KB?先把 `max_colors` 降到 32(也可以试试 `dither=none`),再考虑减少帧数——真正拖累体积的是调色板,不是帧数。
+
+
 `custom` 会读取 `config.json` 中的 `display.gifs`。每个 host 条目要么是一个路径字符串(所有状态共用同一张 GIF),要么是一张按状态映射的表;`"default"` 是回退项。任何条目也可以写成 `{"path": ..., "layout": "fullscreen"}`,让该条目单独以全屏方式显示:
 
 ```json

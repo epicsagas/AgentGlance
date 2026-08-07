@@ -155,6 +155,20 @@ A missing or unreadable GIF falls back to the static frame — the screen never 
 | **Frame Delay** | **80ms – 150ms** per frame (1.2s – 2.0s loop) |
 | **Colors** | **64 – 128 colors** |
 
+**Shrinking an oversized source GIF** (raw exports easily hit multi-MB): sample ~14 frames evenly across the whole clip (preserves full motion range), then re-encode at a short target loop (compresses playback speed only — don't just fps-downsample, that keeps the original's slow duration and blows the loop-length spec):
+
+```bash
+# 1) sample frames, cropped/scaled per layout (STEP = source nb_frames / 14, rounded down)
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=224:116:force_original_aspect_ratio=decrease" -vsync 0 frames/f_%03d.png   # frame layout
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=240:240:force_original_aspect_ratio=increase,crop=240:240" -vsync 0 frames/f_%03d.png   # fullscreen layout (crop to square — it's stretched to fill, not letterboxed)
+
+# 2) re-encode at 10fps (100ms/frame) with a small palette
+ffmpeg -framerate 10 -i frames/f_%03d.png \
+  -vf "split[s0][s1];[s0]palettegen=max_colors=64:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer" \
+  output.gif
+```
+
+Still over 300 KB → drop `max_colors` to 32 before cutting frame count.
 
 ## Verified device API (SD_RU / SD Pro)
 

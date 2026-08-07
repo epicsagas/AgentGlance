@@ -166,6 +166,33 @@ Dai al file il nome dell'host che deve sostituire (minuscolo, spazi → trattini
 | **Ritardo fotogramma** | **80ms – 150ms** per fotogramma (loop da 1.2s – 2.0s) |
 | **Tavolozza colori** | **64 – 128 colori** (ottimizza la velocità di rendering e l'usura della Flash) |
 
+**Ridurre una GIF sorgente alla specifica** (gli export grezzi superano facilmente diversi MB): campiona i fotogrammi in modo uniforme lungo l'intera clip, poi ricodifica con un loop breve così l'intera gamma di movimento sopravvive anche se la velocità di riproduzione viene compressa.
+
+1 — campiona ~14 fotogrammi in modo uniforme dalla sorgente, ritagliati/scalati in base al layout:
+
+```bash
+# layout frame: adattato con letterbox in MIDDLE_BOX, quindi basta ridimensionare (nessun ritaglio necessario)
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=224:116:force_original_aspect_ratio=decrease" \
+  -vsync 0 frames/f_%03d.png
+
+# layout fullscreen: stirato per riempire 240x240, quindi ritaglia prima a quadrato o si deformerà
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=240:240:force_original_aspect_ratio=increase,crop=240:240" \
+  -vsync 0 frames/f_%03d.png
+```
+
+`STEP` = numero di fotogrammi della sorgente ÷ 14 (arrotondato per difetto) — usa ffprobe sulla sorgente (`ffprobe -v error -select_streams v -show_entries stream=nb_frames -of default=nw=1 source.gif`) per ottenerlo.
+
+2 — ricodifica i fotogrammi campionati con un loop breve (10fps = 100ms/fotogramma ≈ 1,4s di loop per 14 fotogrammi) e una tavolozza piccola:
+
+```bash
+ffmpeg -framerate 10 -i frames/f_%03d.png \
+  -vf "split[s0][s1];[s0]palettegen=max_colors=64:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer" \
+  output.gif
+```
+
+Ancora oltre 300 KB? Riduci `max_colors` a 32 (prova anche `dither=none`) prima di tagliare il numero di fotogrammi — è quello il vero costo del loop.
+
+
 
 `custom` legge `display.gifs` da `config.json`. Ogni voce host è una stringa di percorso (una GIF per tutti gli stati) oppure una mappa per stato; `"default"` è il fallback. Qualsiasi voce può anche essere `{"path": ..., "layout": "fullscreen"}` per andare a schermo intero per quella:
 

@@ -163,6 +163,31 @@ Name the file after the host it should replace (lowercase, spaces → hyphens):
 | **Frame Delay** | **80ms – 150ms** per frame (1.2s – 2.0s loop) |
 | **Color Palette** | **64 – 128 colors** (optimizes rendering speed & Flash wear) |
 
+**Shrinking a source GIF to spec** (raw exports easily hit multi-MB): sample frames evenly across the whole clip, then re-encode at a short target loop so the full range of motion survives even though playback speed is compressed.
+
+1 — sample ~14 frames evenly across the source, cropped/scaled per layout:
+
+```bash
+# frame layout: letterboxed into MIDDLE_BOX, so just scale down (no crop needed)
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=224:116:force_original_aspect_ratio=decrease" \
+  -vsync 0 frames/f_%03d.png
+
+# fullscreen layout: stretched to fill 240x240, so crop to square first or it'll distort
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=240:240:force_original_aspect_ratio=increase,crop=240:240" \
+  -vsync 0 frames/f_%03d.png
+```
+
+`STEP` = source frame count ÷ 14 (rounded down) — ffprobe the source (`ffprobe -v error -select_streams v -show_entries stream=nb_frames -of default=nw=1 source.gif`) to get it.
+
+2 — re-encode the sampled frames at a short target loop (10fps = 100ms/frame ≈ 1.4s loop for 14 frames) with a small palette:
+
+```bash
+ffmpeg -framerate 10 -i frames/f_%03d.png \
+  -vf "split[s0][s1];[s0]palettegen=max_colors=64:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer" \
+  output.gif
+```
+
+Still over 300 KB? Drop `max_colors` to 32 (try `dither=none` too) before cutting frame count — that's what actually keeps the loop expensive.
 
 `custom` reads `display.gifs` from `config.json`. Each host entry is either a path string (one GIF for all states) or a per-state map; `"default"` is the fallback. Any entry can also be `{"path": ..., "layout": "fullscreen"}` to go full-screen for that one:
 

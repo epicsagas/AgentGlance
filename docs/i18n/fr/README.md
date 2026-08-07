@@ -166,6 +166,33 @@ Nommez le fichier d'après l'hôte qu'il doit remplacer (minuscules, espaces →
 | **Délai d'image** | **80ms – 150ms** par image (boucle de 1.2s – 2.0s) |
 | **Palette de couleurs** | **64 – 128 couleurs** (optimise la vitesse de rendu et l'usure de la mémoire Flash) |
 
+**Réduire un GIF source à la spécification** (les exports bruts dépassent facilement plusieurs Mo) : échantillonner des images uniformément sur tout le clip, puis réencoder avec une boucle courte pour préserver toute l'amplitude du mouvement même si la vitesse de lecture est compressée.
+
+1 — échantillonner ~14 images uniformément depuis la source, recadrées/redimensionnées selon la mise en page :
+
+```bash
+# mise en page frame : incrustée en letterbox dans MIDDLE_BOX, donc juste réduire l'échelle (pas besoin de recadrer)
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=224:116:force_original_aspect_ratio=decrease" \
+  -vsync 0 frames/f_%03d.png
+
+# mise en page fullscreen : étirée pour remplir 240x240, donc recadrer en carré d'abord sinon ça déforme
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=240:240:force_original_aspect_ratio=increase,crop=240:240" \
+  -vsync 0 frames/f_%03d.png
+```
+
+`STEP` = nombre d'images de la source ÷ 14 (arrondi à l'inférieur) — utiliser ffprobe sur la source (`ffprobe -v error -select_streams v -show_entries stream=nb_frames -of default=nw=1 source.gif`) pour l'obtenir.
+
+2 — réencoder les images échantillonnées avec une boucle courte (10fps = 100ms/image ≈ 1,4s de boucle pour 14 images) et une petite palette :
+
+```bash
+ffmpeg -framerate 10 -i frames/f_%03d.png \
+  -vf "split[s0][s1];[s0]palettegen=max_colors=64:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer" \
+  output.gif
+```
+
+Toujours au-dessus de 300 KB ? Réduire `max_colors` à 32 (essayer aussi `dither=none`) avant de réduire le nombre d'images — c'est ce qui coûte réellement cher dans la boucle.
+
+
 
 `custom` lit `display.gifs` dans `config.json`. Chaque entrée d'hôte est soit une chaîne de chemin (un seul GIF pour tous les états), soit une map par état ; `"default"` est le fallback. Chaque entrée peut aussi être `{"path": ..., "layout": "fullscreen"}` pour passer en plein écran sur celle-là :
 

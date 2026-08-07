@@ -151,6 +151,33 @@ python3 scripts/agent_glance.py --preset hosts
 | **Atraso de quadro** | **80ms – 150ms** por quadro (loop de 1.2s – 2.0s) |
 | **Paleta de cores** | **64 – 128 cores** (otimiza a velocidade de renderização e desgaste da Flash) |
 
+**Reduzir um GIF de origem para a especificação** (exportações brutas facilmente passam de vários MB): amostre quadros uniformemente por todo o clipe e depois recodifique com um loop curto para que toda a amplitude de movimento sobreviva mesmo com a velocidade de reprodução comprimida.
+
+1 — amostre ~14 quadros uniformemente da origem, recortados/escalados conforme o layout:
+
+```bash
+# layout frame: encaixado com letterbox em MIDDLE_BOX, então só reduzir a escala (sem necessidade de recorte)
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=224:116:force_original_aspect_ratio=decrease" \
+  -vsync 0 frames/f_%03d.png
+
+# layout fullscreen: esticado para preencher 240x240, então recorte para quadrado antes ou vai distorcer
+ffmpeg -i source.gif -vf "select='not(mod(n,STEP))',scale=240:240:force_original_aspect_ratio=increase,crop=240:240" \
+  -vsync 0 frames/f_%03d.png
+```
+
+`STEP` = número de quadros da origem ÷ 14 (arredondado para baixo) — use ffprobe na origem (`ffprobe -v error -select_streams v -show_entries stream=nb_frames -of default=nw=1 source.gif`) para obtê-lo.
+
+2 — recodifique os quadros amostrados com um loop curto (10fps = 100ms/quadro ≈ 1.4s de loop para 14 quadros) e uma paleta pequena:
+
+```bash
+ffmpeg -framerate 10 -i frames/f_%03d.png \
+  -vf "split[s0][s1];[s0]palettegen=max_colors=64:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer" \
+  output.gif
+```
+
+Ainda acima de 300 KB? Reduza `max_colors` para 32 (tente também `dither=none`) antes de cortar a contagem de quadros — é isso que realmente encarece o loop.
+
+
 `custom` lê `display.gifs` do `config.json`. Cada entrada de host é uma string de caminho (um GIF para todos os estados) ou um mapa por estado; `"default"` é o fallback. Qualquer entrada também pode ser `{"path": ..., "layout": "fullscreen"}` para ir tela cheia somente nessa:
 
 ```json
