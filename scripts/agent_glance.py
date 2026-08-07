@@ -54,6 +54,10 @@ QUEUE_TTL = 30       # drop queue entries older than this (crash-recovery GC)
 STATUS_FILE = "agent_status.gif"     # fixed name -> overwrites itself (bounded flash use)
 PHOTO_THEME_ID = 2                # "Фото" theme on SD_RU firmware
 THROTTLE_SEC = 8                  # skip re-push of identical state within this window
+GLOBAL_MIN_SEC = 2.0              # global rate floor between ANY two uploads (all sessions).
+                                  # The ESP8266 needs render+flash-write+decode time per gif;
+                                  # without this, N concurrent sessions firing staggered bursts
+                                  # push ~1/DEBOUNCE_SEC and OOM-reboot the device.
 
 # Frame geometry (rendered output is always 240x240).
 W = H = 240
@@ -223,7 +227,12 @@ def _gif_meta(path):
 
 
 def _is_compliant(path, layout):
-    """True if a source already meets spec and needs no normalization."""
+    """True if a source is already safe to push as-is (needs no normalization).
+
+    Reboots come from payload SIZE and FRAME COUNT, never pixel dims —
+    render_gif letterboxes/resizes arbitrary dims into the layout, so we only
+    guard the two quantities that actually OOM the device.
+    """
     try:
         if os.path.getsize(path) > _MAX_BYTES:
             return False
@@ -231,14 +240,8 @@ def _is_compliant(path, layout):
         return False
     meta = _gif_meta(path)
     if not meta:
-        return False  # can't prove it; let the normalizer try
-    w, h, n = meta
-    if n > _MAX_FRAMES:
-        return False
-    if layout == "fullscreen":
-        return (w, h) == (W, H)
-    # frame layout: must fit inside MIDDLE_BOX
-    return w <= 224 and h <= 116
+        return False  # can't prove frame count; let the normalizer try
+    return meta[2] <= _MAX_FRAMES
 
 
 def _norm_key(path, layout):
@@ -302,8 +305,9 @@ def _normalize_gif(src, layout):
                 return cached
         except Exception:
             pass
-    # cache miss -> normalize (64 colors, fall back to 32 if still heavy)
-    tmp = cached + ".tmp"
+    # cache miss -> normalize (64 colors, fall back to 32 if still heavy).
+    # Temp must end in .gif: ffmpeg's muxer is inferred from the output extension.
+    tmp = os.path.join(GIF_CACHE_DIR, key + ".tmp.gif")
     ok = _ffmpeg_normalize(src, layout, tmp, 64)
     if ok and os.path.getsize(tmp) > _MAX_BYTES:
         ok = _ffmpeg_normalize(src, layout, tmp, 32)
@@ -1124,6 +1128,15 @@ def push_state(state, sub=None, info=None):
             and now - prev_t < THROTTLE_SEC):
         return False  # identical state pushed recently -> skip
 
+    # Global rate floor: pace uploads so the device never receives two closer
+    # than GLOBAL_MIN_SEC, regardless of how many sessions are driving it. The
+    # worker holds the device lock here, so sleeping blocks every concurrent
+    # uploader — exactly what prevents the staggered-burst reboot storm.
+    if prev_t > 0:
+        gap = time.time() - prev_t
+        if gap < GLOBAL_MIN_SEC:
+            time.sleep(GLOBAL_MIN_SEC - gap)
+
     preset = cfg["display"]["preset"]
     char_path, layout = (None, None)
     if preset != "default":
@@ -1140,7 +1153,7 @@ def push_state(state, sub=None, info=None):
         gif = render(state, sub, info)
     _upload_with_retry("/photo/upload", "file", gif)
     set_photo_enabled(STATUS_FILE, True)
-    json.dump({"key": key, "t": now, "project": project}, open(THROTTLE_PATH, "w"))
+    json.dump({"key": key, "t": time.time(), "project": project}, open(THROTTLE_PATH, "w"))
     return True
 
 
