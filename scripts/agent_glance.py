@@ -1075,7 +1075,9 @@ def render_gif(state, sub=None, info=None, char_path=None, layout="frame", out=T
         else:
             x, y, w, h = _contain_box(src.width, src.height, MIDDLE_BOX)
             base.paste(src.resize((w, h), Image.LANCZOS), (x, y))
-        out_frames.append(base)
+        # Quantize composed frame to 64 colors to prevent size bloat in frame layout
+        q = base.quantize(colors=64, method=Image.Quantize.MEDIANCUT)
+        out_frames.append(q)
         durations.append(dur)
 
     out_frames[0].save(
@@ -1085,6 +1087,7 @@ def render_gif(state, sub=None, info=None, char_path=None, layout="frame", out=T
         loop=0,
         duration=durations,
         disposal=2,
+        optimize=True,
     )
     return out
 
