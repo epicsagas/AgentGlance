@@ -630,6 +630,9 @@ def _fmt(n):
 MODEL_LIMIT_PATTERNS = [
     (r"gemini-?2\.[59]-?pro|gemini-?1\.5-?pro|gemini-?2-?pro", 2_000_000),
     (r"gemini", 1_000_000),
+    # Claude Max records these aliases in the transcript rather than a context
+    # limit. Keep the specific 1M variants ahead of the generic Claude fallback.
+    (r"claude[-_\s]*(?:opus|fable)(?:[-_\s]|$)", 1_000_000),
     (r"claude", 200_000),
     (r"gpt-4|codex|deepseek|qwen", 128_000),
     (r"o1|o3", 200_000),
