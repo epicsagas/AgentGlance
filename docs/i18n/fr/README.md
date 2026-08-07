@@ -140,7 +140,7 @@ Choisissez un preset avec le flag CLI `--preset` (il persiste dans `config.json`
 python3 scripts/agent_glance.py --preset hosts
 ```
 
-`hosts` est livré avec des placeholders neutres dans `assets/hosts/` afin de fonctionner immédiatement. Pour utiliser votre propre personnage, déposez un GIF dans le répertoire utilisateur — il prend le pas sur celui fourni, et l'écran se met à jour au prochain envoi d'état (pas de redémarrage) :
+`hosts` est livré avec des placeholders neutres dans `assets/gif/` afin de fonctionner immédiatement. Pour utiliser votre propre personnage, déposez un GIF dans le répertoire utilisateur — il prend le pas sur celui fourni, et l'écran se met à jour au prochain envoi d'état (pas de redémarrage) :
 
 ```bash
 mkdir -p ~/.agent-glance/gifs/hosts

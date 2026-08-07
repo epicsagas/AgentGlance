@@ -140,7 +140,7 @@ Elige un preset con el flag CLI `--preset` (se guarda en `config.json`, como `--
 python3 scripts/agent_glance.py --preset hosts
 ```
 
-`hosts` viene con marcadores de posición neutrales en `assets/hosts/`. Sobrescribe uno colocando un `<host>.gif` en `~/.agent-glance/gifs/hosts/` (p. ej. `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`) — el archivo del usuario prevalece sobre el incluido.
+`hosts` viene con marcadores de posición neutrales en `assets/gif/`. Sobrescribe uno colocando un `<host>.gif` en `~/.agent-glance/gifs/hosts/` (p. ej. `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`) — el archivo del usuario prevalece sobre el incluido.
 
 ### Especificaciones óptimas de GIF
 

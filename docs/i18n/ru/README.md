@@ -140,7 +140,7 @@ python3 <plugin>/scripts/agent_glance.py --setup
 python3 scripts/agent_glance.py --preset hosts
 ```
 
-`hosts` поставляется с нейтральными заглушками в `assets/hosts/`. Переопределите одну, положив `<host>.gif` в `~/.agent-glance/gifs/hosts/` (например, `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`) — пользовательский файл имеет приоритет над встроенным.
+`hosts` поставляется с нейтральными заглушками в `assets/gif/`. Переопределите одну, положив `<host>.gif` в `~/.agent-glance/gifs/hosts/` (например, `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`) — пользовательский файл имеет приоритет над встроенным.
 
 ### Оптимальные характеристики GIF
 

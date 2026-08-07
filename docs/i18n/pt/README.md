@@ -140,7 +140,7 @@ Escolha uma predefinição com o flag CLI `--preset` (persiste em `config.json`,
 python3 scripts/agent_glance.py --preset hosts
 ```
 
-`hosts` vem com espaços reservados neutros em `assets/hosts/`. Substitua um soltando um `<host>.gif` em `~/.agent-glance/gifs/hosts/` (ex.: `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`) — o arquivo do usuário prevalece sobre o embutido.
+`hosts` vem com espaços reservados neutros em `assets/gif/`. Substitua um soltando um `<host>.gif` em `~/.agent-glance/gifs/hosts/` (ex.: `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`) — o arquivo do usuário prevalece sobre o embutido.
 
 ### Especificações ideais de GIF
 

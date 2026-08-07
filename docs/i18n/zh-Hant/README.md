@@ -140,7 +140,7 @@ python3 scripts/agent_glance.py --preset hosts
 
 `--preset` 會像 `--ip` 一樣持久化寫入 `config.json`。
 
-`hosts` 在 `assets/hosts/` 中隨附中性的預留素材;覆蓋方式為將 `<host>.gif` 放進 `~/.agent-glance/gifs/hosts/`(例如 `claude-code.gif`、`codex.gif`、`antigravity.gif`、`hermes.gif`、`agent.gif`)—— 使用者檔案優先於隨附素材。
+`hosts` 在 `assets/gif/` 中隨附中性的預留素材;覆蓋方式為將 `<host>.gif` 放進 `~/.agent-glance/gifs/hosts/`(例如 `claude-code.gif`、`codex.gif`、`antigravity.gif`、`hermes.gif`、`agent.gif`)—— 使用者檔案優先於隨附素材。
 
 ### GIF 最佳規格與推薦參數
 

@@ -140,7 +140,7 @@ python3 <plugin>/scripts/agent_glance.py --setup
 python3 scripts/agent_glance.py --preset hosts
 ```
 
-`hosts` 在 `assets/hosts/` 中附带中性的占位图。把 `<host>.gif` 放到 `~/.agent-glance/gifs/hosts/` 即可覆盖某一个(例如 `claude-code.gif`、`codex.gif`、`antigravity.gif`、`hermes.gif`、`agent.gif`) —— 用户文件优先于自带文件。
+`hosts` 在 `assets/gif/` 中附带中性的占位图。把 `<host>.gif` 放到 `~/.agent-glance/gifs/hosts/` 即可覆盖某一个(例如 `claude-code.gif`、`codex.gif`、`antigravity.gif`、`hermes.gif`、`agent.gif`) —— 用户文件优先于自带文件。
 
 ### GIF 最佳规格与推荐参数
 

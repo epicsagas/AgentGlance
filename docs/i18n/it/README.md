@@ -140,7 +140,7 @@ Scegli un preset con il flag CLI `--preset` (viene salvato in `config.json`, com
 python3 scripts/agent_glance.py --preset hosts
 ```
 
-`hosts` viene fornito con segnaposto neutri in `assets/hosts/`, così funziona fin da subito. Per usare un tuo personaggio, inserisci una GIF nella directory utente — ha la precedenza su quella in bundle, e lo schermo si aggiorna al prossimo push di stato (nessun riavvio):
+`hosts` viene fornito con segnaposto neutri in `assets/gif/`, così funziona fin da subito. Per usare un tuo personaggio, inserisci una GIF nella directory utente — ha la precedenza su quella in bundle, e lo schermo si aggiorna al prossimo push di stato (nessun riavvio):
 
 ```bash
 mkdir -p ~/.agent-glance/gifs/hosts
