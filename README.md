@@ -115,6 +115,44 @@ Config is read **env-var first**, falling back to `~/.agent-glance/config.json` 
 |---|---|---|
 | `AGENT_GLANCE_IP` | device IP — **required** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | context window used to scale the % bar | `200000` |
+| `AGENT_GLANCE_PRESET` | display preset: `default` \| `hosts` \| `anime` \| `custom` | `default` |
+| `AGENT_GLANCE_LAYOUT` | gif-mode layout: `frame` \| `fullscreen` | `frame` |
+
+### GIF mode & presets
+
+The default mode is the static status frame described above. Set a different preset to switch to **gif mode**, which composites a looping animated GIF (character in the middle, header + status footer kept) that the device plays locally — one upload per state, no per-frame network traffic. State is still signalled by the top accent bar + background colour.
+
+| Preset | What it shows |
+|---|---|
+| `default` | Static frame (the original behaviour) |
+| `hosts` | A bundled per-host character GIF in the middle; header + footer kept |
+| `anime` | *Reserved* — slot exists; art TBD. Falls back to the hosts character |
+| `custom` | Your own GIFs, per host and/or per state (see schema) |
+
+Pick a preset with the `--preset` CLI flag (it persists to `config.json`, like `--ip`):
+
+```
+python3 scripts/agent_glance.py --preset hosts
+```
+
+`hosts` ships with neutral placeholders in `assets/hosts/`. Override one by dropping a `<host>.gif` into `~/.agent-glance/gifs/hosts/` (e.g. `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`) — the user file wins over the bundled one.
+
+`custom` reads `display.gifs` from `config.json`. Each host entry is either a path string (one GIF for all states) or a per-state map; `"default"` is the fallback. Any entry can also be `{"path": ..., "layout": "fullscreen"}` to go full-screen for that one:
+
+```json
+"display": {
+  "preset": "custom",
+  "layout": "frame",
+  "gifs": {
+    "default": "/abs/path/fallback.gif",
+    "claude code": { "working": "a.gif", "waiting": "b.gif", "done": "c.gif" },
+    "codex": "/one-gif-for-all-states.gif",
+    "agent": { "path": "x.gif", "layout": "fullscreen" }
+  }
+}
+```
+
+Resolution order per push: `gifs[host][state]` → `gifs[host]` → `gifs["default"]` → bundled hosts placeholder. A missing or unreadable GIF never blanks the screen — it falls back to the static frame.
 
 ## Commands
 
@@ -125,9 +163,18 @@ Config is read **env-var first**, falling back to `~/.agent-glance/config.json` 
 | `/agent-glance:test` | Push a frame (or cycle all three) to check rendering |
 | `/agent-glance:restore` | Put the device back to its original clock and photos |
 
+A few options are **CLI flags only** (no slash command) — they persist to `~/.agent-glance/config.json`, mirroring `--ip`:
+
+| Flag | What it does |
+|---|---|
+| `--ip <IP>` | save the device IP |
+| `--preset default\|hosts\|anime\|custom` | switch display mode (see [GIF mode](#gif-mode--presets)) |
+| `--layout frame\|fullscreen` | gif-mode layout (frame keeps header+footer; fullscreen is the GIF only) |
+| `--test [state] [subtitle]` | push a frame; respects the current preset, so it previews gif mode too |
+
 ## How it works
 
-The firmware has **no text API**, so there is nothing to "print" to. Instead the script renders a 240×240 GIF with Pillow and pushes it into the device's Photo album, with that image as the only enabled photo and Photo as the only enabled theme — so the frame stays put instead of rotating away.
+The firmware has **no text API**, so there is nothing to "print" to. Instead the script renders a 240×240 GIF with Pillow and pushes it into the device's Photo album, with that image as the only enabled photo and Photo as the only enabled theme — so the frame stays put instead of rotating away. The firmware's GIF decoder also plays **animated** GIFs, so in gif mode the script composites a multi-frame GIF and the device loops it locally — one upload per state, no per-frame traffic.
 
 ```
 host lifecycle hook (JSON on stdin)

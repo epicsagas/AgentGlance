@@ -118,6 +118,44 @@ python3 <plugin>/scripts/agent_glance.py --setup
 |---|---|---|
 | `AGENT_GLANCE_IP` | 裝置 IP —— **必填** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | 用於縮放百分比條的上下文視窗大小 | `200000` |
+| `AGENT_GLANCE_PRESET` | 顯示預設:`default` | `hosts` | `anime` | `custom` | `default` |
+| `AGENT_GLANCE_LAYOUT` | gif 模式版面:`frame` | `fullscreen` | `frame` |
+
+### GIF 模式與預設
+
+預設模式為靜態畫面。選擇其他預設會切換到 gif 模式,此模式會合成一張循環播放的動態 GIF(角色置中,並保留頁首 header 與狀態頁尾 footer),由裝置在本機播放 —— 每個狀態只需上傳一次,沒有逐幀的流量。狀態仍由頂部的強調條與背景顏色來指示。
+
+| Preset | 顯示內容 |
+|---|---|
+| `default` | 靜態畫面(原始行為) |
+| `hosts` | 中央播放隨附的各主機角色 GIF,保留頁首與頁尾 |
+| `anime` | 保留,欄位已存在,美術待定,會退回 hosts 角色 |
+| `custom` | 你自備的 GIF,可按主機和/或按狀態指定(詳見 schema) |
+
+```
+python3 scripts/agent_glance.py --preset hosts
+```
+
+`--preset` 會像 `--ip` 一樣持久化寫入 `config.json`。
+
+`hosts` 在 `assets/hosts/` 中隨附中性的預留素材;覆蓋方式為將 `<host>.gif` 放進 `~/.agent-glance/gifs/hosts/`(例如 `claude-code.gif`、`codex.gif`、`antigravity.gif`、`hermes.gif`、`agent.gif`)—— 使用者檔案優先於隨附素材。
+
+`custom` 會從 `config.json` 讀取 `display.gifs`;每個 host 條目可為路徑字串(所有狀態共用一張 GIF)或按狀態的對應表;`"default"` 為後備;任何條目都可為 `{"path":...,"layout":"fullscreen"}`。
+
+```json
+"display": {
+  "preset": "custom",
+  "layout": "frame",
+  "gifs": {
+    "default": "/abs/path/fallback.gif",
+    "claude code": { "working": "a.gif", "waiting": "b.gif", "done": "c.gif" },
+    "codex": "/one-gif-for-all-states.gif",
+    "agent": { "path": "x.gif", "layout": "fullscreen" }
+  }
+}
+```
+
+每次推送時的解析順序:`gifs[host][state]` → `gifs[host]` → `gifs["default"]` → 隨附的 hosts 預留素材。GIF 若缺失或無法讀取,絕不會讓畫面空白 —— 會退回為靜態畫面。
 
 ## 指令
 
@@ -128,9 +166,18 @@ python3 <plugin>/scripts/agent_glance.py --setup
 | `/agent-glance:test` | 推送一幀(或依序循環三種狀態)以檢查渲染效果 |
 | `/agent-glance:restore` | 將裝置還原為原本的時鐘與相片狀態 |
 
+有少數選項僅為 CLI 旗標(沒有對應的斜線指令),會像 `--ip` 一樣持久化寫入 `~/.agent-glance/config.json`。
+
+| Flag | 功能 |
+|---|---|
+| `--ip <IP>` | 儲存裝置 IP |
+| `--preset default\|hosts\|anime\|custom` | 切換顯示模式(詳見 [GIF 模式](#gif-模式與預設)) |
+| `--layout frame\|fullscreen` | gif 模式版面(frame 保留頁首與頁尾;fullscreen 僅顯示 GIF) |
+| `--test [state] [subtitle]` | 推送一幀;遵循目前預設,因此可預覽 gif 模式 |
+
 ## 運作原理
 
-此韌體**沒有文字 API**,因此根本沒有可以「輸出」的對象。腳本改為用 Pillow 渲染一張 240×240 的 GIF,推送到裝置的 Photo 相簿中,並將該圖片設為唯一啟用的相片、Photo 設為唯一啟用的主題 —— 讓畫面固定不變,不會被輪替掉。
+此韌體**沒有文字 API**,因此根本沒有可以「輸出」的對象。腳本改為用 Pillow 渲染一張 240×240 的 GIF,推送到裝置的 Photo 相簿中,並將該圖片設為唯一啟用的相片、Photo 設為唯一啟用的主題 —— 讓畫面固定不變,不會被輪替掉。韌體的 GIF 解碼器也會播放**動態** GIF,因此在 gif 模式下,腳本會合成一張多幀 GIF,由裝置在本機循環播放 —— 每個狀態只需上傳一次,沒有逐幀的流量。
 
 ```
 host lifecycle hook (JSON on stdin)

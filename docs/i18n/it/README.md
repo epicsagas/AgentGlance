@@ -118,6 +118,44 @@ La configurazione viene letta **prima dalle variabili d'ambiente**, e in loro as
 |---|---|---|
 | `AGENT_GLANCE_IP` | IP del dispositivo — **obbligatorio** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | finestra di contesto usata per scalare la barra percentuale | `200000` |
+| `AGENT_GLANCE_PRESET` | preset di visualizzazione: `default` \| `hosts` \| `anime` \| `custom` | `default` |
+| `AGENT_GLANCE_LAYOUT` | layout modalità gif: `frame` \| `fullscreen` | `frame` |
+
+### Modalità GIF e preset
+
+La modalità predefinita è il fotogramma di stato statico descritto sopra. Scegli un altro preset per passare alla **modalità gif**, che compone una GIF animata in loop (personaggio al centro, con header + footer di stato mantenuti) riprodotta localmente dal dispositivo — un caricamento per stato, nessun traffico di rete per ogni fotogramma. Lo stato è comunque segnalato dalla barra colorata superiore + dal colore di sfondo.
+
+| Preset | Cosa mostra |
+|---|---|
+| `default` | Fotogramma statico (il comportamento originale) |
+| `hosts` | Una GIF carattere per host in bundle al centro; header + footer mantenuti |
+| `anime` | *Riservato* — lo slot esiste; artwork da definire. Ricade sul carattere hosts |
+| `custom` | Le tue GIF, per host e/o per stato (vedi schema) |
+
+Scegli un preset con il flag CLI `--preset` (viene salvato in `config.json`, come `--ip`):
+
+```
+python3 scripts/agent_glance.py --preset hosts
+```
+
+`hosts` viene fornito con segnaposto neutri in `assets/hosts/`. Sovrascrilineo uno inserendo un file `<host>.gif` in `~/.agent-glance/gifs/hosts/` (ad es. `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`) — il file dell'utente ha la precedenza su quello in bundle.
+
+`custom` legge `display.gifs` da `config.json`. Ogni voce host è una stringa di percorso (una GIF per tutti gli stati) oppure una mappa per stato; `"default"` è il fallback. Qualsiasi voce può anche essere `{"path": ..., "layout": "fullscreen"}` per andare a schermo intero per quella:
+
+```json
+"display": {
+  "preset": "custom",
+  "layout": "frame",
+  "gifs": {
+    "default": "/abs/path/fallback.gif",
+    "claude code": { "working": "a.gif", "waiting": "b.gif", "done": "c.gif" },
+    "codex": "/one-gif-for-all-states.gif",
+    "agent": { "path": "x.gif", "layout": "fullscreen" }
+  }
+}
+```
+
+Ordine di risoluzione per ogni push: `gifs[host][state]` → `gifs[host]` → `gifs["default"]` → segnaposto hosts in bundle. Una GIF mancante o illeggibile non fa mai diventare nero lo schermo — ricade sul fotogramma statico.
 
 ## Comandi
 
@@ -128,9 +166,18 @@ La configurazione viene letta **prima dalle variabili d'ambiente**, e in loro as
 | `/agent-glance:test` | Invia un fotogramma (o li fa scorrere tutti e tre) per verificare il rendering |
 | `/agent-glance:restore` | Riporta il dispositivo al suo orologio e alle foto originali |
 
+Alcune opzioni sono **solo flag CLI** (nessun comando slash) — vengono salvate in `~/.agent-glance/config.json`, come `--ip`:
+
+| Flag | Cosa fa |
+|---|---|
+| `--ip <IP>` | salva l'IP del dispositivo |
+| `--preset default\|hosts\|anime\|custom` | cambia modalità di visualizzazione (vedi [Modalità GIF](#modalità-gif-e-preset)) |
+| `--layout frame\|fullscreen` | layout modalità gif (frame mantiene header+footer; fullscreen è solo GIF) |
+| `--test [state] [subtitle]` | invia un fotogramma; rispetta il preset corrente, quindi fa l'anteprima anche della modalità gif |
+
 ## Come funziona
 
-Questo firmware **non ha un'API testuale**, quindi non c'è nulla da "stampare". Lo script renderizza invece una GIF 240×240 con Pillow e la carica nell'album foto del dispositivo, rendendo quell'immagine l'unica foto abilitata e Photo l'unico tema abilitato — così il fotogramma resta fisso invece di ruotare via.
+Questo firmware **non ha un'API testuale**, quindi non c'è nulla da "stampare". Lo script renderizza invece una GIF 240×240 con Pillow e la carica nell'album foto del dispositivo, rendendo quell'immagine l'unica foto abilitata e Photo l'unico tema abilitato — così il fotogramma resta fisso invece di ruotare via. Anche il decodificatore GIF del firmware riproduce GIF **animate**, quindi in modalità gif lo script compone una GIF multi-fotogramma e il dispositivo la riproduce in loop localmente — un caricamento per stato, nessun traffico per fotogramma.
 
 ```
 host lifecycle hook (JSON on stdin)

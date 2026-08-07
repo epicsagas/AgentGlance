@@ -118,6 +118,44 @@ La configuration est lue **d'abord via les variables d'environnement**, puis ret
 |---|---|---|
 | `AGENT_GLANCE_IP` | IP de l'appareil — **obligatoire** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | fenêtre de contexte utilisée pour mettre à l'échelle la barre de % | `200000` |
+| `AGENT_GLANCE_PRESET` | preset d'affichage : `default` \| `hosts` \| `anime` \| `custom` | `default` |
+| `AGENT_GLANCE_LAYOUT` | disposition du mode gif : `frame` \| `fullscreen` | `frame` |
+
+### Mode GIF et presets
+
+Le mode par défaut est l'image statique décrite ci-dessus. Choisir un autre preset bascule en **mode gif**, qui compose un GIF animé en boucle (personnage au centre, en-tête + pied de page d'état conservés) lu localement par l'appareil — un envoi par état, pas de trafic réseau par image. L'état reste signalé par la barre d'accent en haut + la couleur de fond.
+
+| Preset | Ce qu'il affiche |
+|---|---|
+| `default` | Image statique (le comportement d'origine) |
+| `hosts` | Un GIF de personnage par hôte, fourni avec le plugin, au centre ; en-tête + pied de page conservés |
+| `anime` | *Réservé* — l'emplacement existe ; art à définir. Retombe sur le personnage hosts |
+| `custom` | Vos propres GIFs, par hôte et/ou par état (voir le schéma) |
+
+Choisissez un preset avec le flag CLI `--preset` (il persiste dans `config.json`, comme `--ip`) :
+
+```
+python3 scripts/agent_glance.py --preset hosts
+```
+
+`hosts` est livré avec des placeholders neutres dans `assets/hosts/`. Pour remplacer l'un d'eux, déposez un `<host>.gif` dans `~/.agent-glance/gifs/hosts/` (par ex. `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`) — le fichier utilisateur l'emporte sur celui fourni.
+
+`custom` lit `display.gifs` dans `config.json`. Chaque entrée d'hôte est soit une chaîne de chemin (un seul GIF pour tous les états), soit une map par état ; `"default"` est le fallback. Chaque entrée peut aussi être `{"path": ..., "layout": "fullscreen"}` pour passer en plein écran sur celle-là :
+
+```json
+"display": {
+  "preset": "custom",
+  "layout": "frame",
+  "gifs": {
+    "default": "/abs/path/fallback.gif",
+    "claude code": { "working": "a.gif", "waiting": "b.gif", "done": "c.gif" },
+    "codex": "/one-gif-for-all-states.gif",
+    "agent": { "path": "x.gif", "layout": "fullscreen" }
+  }
+}
+```
+
+Ordre de résolution à chaque envoi : `gifs[host][state]` → `gifs[host]` → `gifs["default"]` → placeholder hosts fourni. Un GIF manquant ou illisible ne vide jamais l'écran — il retombe sur l'image statique.
 
 ## Commandes
 
@@ -128,9 +166,18 @@ La configuration est lue **d'abord via les variables d'environnement**, puis ret
 | `/agent-glance:test` | Envoie une image (ou fait défiler les trois) pour vérifier le rendu |
 | `/agent-glance:restore` | Remet l'appareil dans son état d'horloge et de photos d'origine |
 
+Quelques options sont **des flags CLI uniquement** (pas de commande slash) — elles persistent dans `~/.agent-glance/config.json`, comme `--ip` :
+
+| Flag | Ce qu'elle fait |
+|---|---|
+| `--ip <IP>` | enregistre l'IP de l'appareil |
+| `--preset default\|hosts\|anime\|custom` | bascule le mode d'affichage (voir [Mode GIF](#mode-gif-et-presets)) |
+| `--layout frame\|fullscreen` | disposition du mode gif (`frame` conserve en-tête+pied de page ; `fullscreen` = GIF uniquement) |
+| `--test [state] [subtitle]` | envoie une image ; respecte le preset courant, donc prévisualise aussi le mode gif |
+
 ## Fonctionnement
 
-Ce firmware n'a **pas d'API texte**, il n'y a donc rien à "afficher" à proprement parler. Le script génère à la place un GIF 240×240 avec Pillow et le télécharge dans l'album photo de l'appareil, en faisant de cette image la seule photo activée et de Photo le seul thème activé — de sorte que l'image reste fixe au lieu de tourner.
+Ce firmware n'a **pas d'API texte**, il n'y a donc rien à "afficher" à proprement parler. Le script génère à la place un GIF 240×240 avec Pillow et le télécharge dans l'album photo de l'appareil, en faisant de cette image la seule photo activée et de Photo le seul thème activé — de sorte que l'image reste fixe au lieu de tourner. Le décodeur GIF du firmware lit aussi les GIFs **animés**, donc en mode gif le script compose un GIF multi-frames que l'appareil lit en boucle localement — un envoi par état, pas de trafic par image.
 
 ```
 host lifecycle hook (JSON on stdin)

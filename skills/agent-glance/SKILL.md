@@ -113,8 +113,32 @@ first prompt after enabling animates the display.
 |---|---|
 | `--setup` | Take over device (backup + Photo-only mode + first frame) |
 | `--restore` | Revert device to the pre-setup themes/photos |
-| `--test working\|waiting\|done [subtitle]` | Manual push (uses newest local transcript for metrics) |
+| `--test working\|waiting\|done [subtitle]` | Manual push (uses newest local transcript for metrics; respects the current preset, so it previews gif mode) |
 | `--ip <IP>` | Save IP to `~/.agent-glance/config.json` (alternative to the env var) |
+| `--preset default\|hosts\|anime\|custom` | Switch display mode (`default` = static frame; others = animated gif mode) |
+| `--layout frame\|fullscreen` | gif-mode layout: `frame` keeps header+footer; `fullscreen` is the GIF only |
+
+## GIF mode (optional)
+
+Beyond the static status frame, gif mode composites a **looping animated GIF** (character in the middle, header + status footer kept) that the firmware decodes and plays locally — one upload per state, no per-frame network traffic. State is still shown via the top accent bar + background colour.
+
+```bash
+# bundled neutral per-host character placeholders (work out of the box):
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --preset hosts
+
+# override one host by dropping a file in the user dir (wins over bundled):
+#   ~/.agent-glance/gifs/hosts/claude-code.gif
+```
+
+`anime` is a reserved slot (art TBD; falls back to the hosts character). `custom` lets the user map their own GIFs per host and per state in `~/.agent-glance/config.json`:
+
+```json
+"display": { "preset": "custom", "layout": "frame",
+  "gifs": { "default": "/path/fallback.gif",
+            "claude code": { "working": "a.gif", "waiting": "b.gif", "done": "c.gif" } } }
+```
+
+A missing or unreadable GIF falls back to the static frame — the screen never blanks. See the repo README for the full resolution order.
 
 ## Verified device API (SD_RU / SD Pro)
 

@@ -15,7 +15,7 @@ Driven by Claude Code hooks (reads the hook JSON object from stdin).
   agent_glance.py --test working|waiting|done [subtitle]
   agent_glance.py --flush-queue           # (internal) detached worker: debounce + single upload
 """
-import sys, os, json, time, mimetypes, uuid, subprocess, glob, re
+import sys, os, json, time, mimetypes, uuid, subprocess, glob, re, math
 import urllib.request, urllib.parse, urllib.error
 from contextlib import contextmanager
 from PIL import Image, ImageDraw, ImageFont
@@ -46,6 +46,18 @@ STATUS_FILE = "agent_status.gif"     # fixed name -> overwrites itself (bounded 
 PHOTO_THEME_ID = 2                # "Фото" theme on SD_RU firmware
 THROTTLE_SEC = 8                  # skip re-push of identical state within this window
 
+# Frame geometry (rendered output is always 240x240).
+W = H = 240
+CX = W // 2
+
+# GIF mode: per-host character GIFs, composited into the middle of the chrome.
+USER_GIF_DIR = os.path.join(STATE_DIR, "gifs")           # ~/.agent-glance/gifs
+USER_HOSTS_DIR = os.path.join(USER_GIF_DIR, "hosts")     # user overrides (precedence)
+USER_ANIME_DIR = os.path.join(USER_GIF_DIR, "anime")
+BUNDLED_HOSTS_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "assets", "hosts"))
+_MAX_FRAMES = 16      # bound output size / decode time / flash wear
+_MIN_FRAME_MS = 50    # floor; below this the device stutters
+
 # State precedence: when competing events coalesce in the debounce window, the
 # highest-priority one wins (ties broken by recency). `done` outranks a late
 # `waiting` so the screen never flips back to APPROVAL after a Stop.
@@ -56,12 +68,22 @@ STATE_PRIORITY = {"done": 3, "working": 2, "waiting": 1}
 def load_config():
     # Env vars take precedence (portable across machines + plugin installs);
     # config.json is an optional local fallback for the personal setup.
-    cfg = {"ip": "", "context_limit": 200000}
+    cfg = {"ip": "", "context_limit": 200000,
+           "display": {"preset": "default", "layout": "frame", "gifs": {}}}
     if os.path.exists(CONFIG_PATH):
         try:
             cfg.update(json.load(open(CONFIG_PATH)))
         except Exception:
             pass
+    # Shallow cfg.update can replace the whole "display" dict; normalize so the
+    # nested keys always exist with sane defaults.
+    d = cfg.get("display")
+    if not isinstance(d, dict):
+        d = {}
+    d.setdefault("preset", "default")
+    d.setdefault("layout", "frame")
+    d.setdefault("gifs", {})
+    cfg["display"] = d
     if os.environ.get("AGENT_GLANCE_IP"):
         cfg["ip"] = os.environ["AGENT_GLANCE_IP"]
     if os.environ.get("AGENT_GLANCE_CONTEXT_LIMIT"):
@@ -69,7 +91,66 @@ def load_config():
             cfg["context_limit"] = int(os.environ["AGENT_GLANCE_CONTEXT_LIMIT"])
         except Exception:
             pass
+    if os.environ.get("AGENT_GLANCE_PRESET"):
+        cfg["display"]["preset"] = os.environ["AGENT_GLANCE_PRESET"].strip().lower()
+    if os.environ.get("AGENT_GLANCE_LAYOUT"):
+        cfg["display"]["layout"] = os.environ["AGENT_GLANCE_LAYOUT"].strip().lower()
     return cfg
+
+
+def _host_filename(host):
+    """Map a detect_host() label to its GIF stem, e.g. "claude code" -> claude-code.gif."""
+    return host.replace(" ", "-").lower() + ".gif"
+
+
+def _unpack_entry(entry, default_layout):
+    """A custom gifs entry is either a path string or {"path":..,"layout":..}."""
+    if isinstance(entry, dict):
+        return entry.get("path"), entry.get("layout", default_layout)
+    return entry, default_layout
+
+
+def _resolve_char(preset, host, state, cfg):
+    """Resolve (char_path, layout) for this push, or (None, None) to fall back.
+
+    custom : gifs[host][state] -> gifs[host] (dict inner default, or str) -> gifs["default"]
+    anime  : user anime override (fullscreen); else hosts placeholder fallback
+    hosts  : user override -> bundled placeholder
+    """
+    display = cfg.get("display", {})
+    gifs = display.get("gifs", {}) or {}
+    layout_default = display.get("layout", "frame")
+    stem = _host_filename(host)
+
+    if preset == "custom":
+        host_entry = gifs.get(host)
+        cand = None
+        if isinstance(host_entry, dict):
+            cand = host_entry.get(state) or host_entry.get("default")
+        elif isinstance(host_entry, str):
+            cand = host_entry
+        elif "default" in gifs:
+            cand = gifs["default"]
+        if cand:
+            path, layout = _unpack_entry(cand, layout_default)
+            if path and os.path.exists(path):
+                return path, layout
+
+    if preset == "anime":
+        # Anime art is TBD ("지정 예정"). User override wins; otherwise fall
+        # through to the hosts placeholder so the screen never blanks.
+        user = os.path.join(USER_ANIME_DIR, stem)
+        if os.path.exists(user):
+            return user, "fullscreen"
+
+    # hosts preset, plus custom/anime fallback -> user override then bundled.
+    user = os.path.join(USER_HOSTS_DIR, stem)
+    if os.path.exists(user):
+        return user, layout_default
+    bundled = os.path.join(BUNDLED_HOSTS_DIR, stem)
+    if os.path.exists(bundled):
+        return bundled, layout_default
+    return None, None
 
 
 def base_url():
@@ -587,46 +668,19 @@ def get_context_tier_color(pct):
         return (120, 230, 160)
 
 
-def render(state, sub=None, info=None, out=TMP_GIF):
-    s = STATES.get(state, STATES["working"])
-    info = info or {}
-    W = H = 240
-    img = Image.new("RGB", (W, H), s["bg"])
-    d = ImageDraw.Draw(img)
-    cx = W // 2
-
+def _draw_header(d, s, info):
+    """Top accent bar + project · host header + divider. Shared chrome."""
     d.rectangle([0, 0, W, 6], fill=s["fg"])              # top accent bar
-
-    # ---- header: project · host (top, bold, large) ----
     host = detect_host()
     proj = info.get("project") or project_name()
     fhead = _font(18, True, cjk=True)
     head = _foot_str(d, host, proj, fhead, 216)
-    d.text((cx, 26), head, font=fhead, fill=(240, 240, 240), anchor="mm")
+    d.text((CX, 26), head, font=fhead, fill=(240, 240, 240), anchor="mm")
     d.line([(16, 42), (224, 42)], fill=s["fg"], width=1)  # divider under header
 
-    # ---- status: dot + label inline on one row ----
-    flab = _font(26, True)
-    label_w = d.textlength(s["label"], font=flab)
-    dot_r = 6
-    gap = 16
-    row_w = dot_r * 2 + gap + label_w          # dot + gap + text
-    rx = cx - row_w / 2                         # left edge of the row
-    dot_cx = rx + dot_r                         # dot center
-    status_y = 68
-    d.ellipse([dot_cx - dot_r, status_y - dot_r, dot_cx + dot_r, status_y + dot_r], fill=s["fg"])
-    if s["pulse"]:
-        d.ellipse([dot_cx - dot_r - 4, status_y - dot_r - 4,
-                   dot_cx + dot_r + 4, status_y + dot_r + 4], outline=s["fg"], width=2)
-    d.text((dot_cx + dot_r + gap, status_y), s["label"], font=flab, fill=s["fg"], anchor="lm")
 
-    sub = (sub or "").strip() or s["sub"]
-    fsub = _font(18, cjk=True)
-    y = 100                                     # margin below the status row
-    for ln in _wrap(sub, fsub, 200, d, max_lines=3):
-        d.text((cx, y), ln, font=fsub, fill=(225, 225, 225), anchor="mm")
-        y += 22
-
+def _draw_footer(d, s, info):
+    """Bottom metrics block (model / context % / usage bar / tokens). Shared chrome."""
     # ---- metrics block: flush to the bottom, generous row spacing ----
     limit = info.get("limit") or resolve_model_context_limit(info.get("model"), load_config().get("context_limit", 200000))
     ctx = info.get("ctx", 0)
@@ -636,7 +690,7 @@ def render(state, sub=None, info=None, out=TMP_GIF):
     # token row, flush to the bottom edge
     ftn = _font(12, False)
     d.text((16, 228), "in {}".format(_fmt(info.get("cum_in", 0))), font=ftn, fill=(185, 185, 185), anchor="lm")
-    d.text((cx, 228), "{}/{}".format(_fmt(ctx), _fmt(limit)), font=ftn, fill=(220, 220, 220), anchor="mm")
+    d.text((CX, 228), "{}/{}".format(_fmt(ctx), _fmt(limit)), font=ftn, fill=(220, 220, 220), anchor="mm")
     d.text((224, 228), "out {}".format(_fmt(info.get("cum_out", 0))), font=ftn, fill=(185, 185, 185), anchor="rm")
 
     # Tier-based dynamic color for context bar & percentage label
@@ -659,7 +713,140 @@ def render(state, sub=None, info=None, out=TMP_GIF):
     # divider capping the whole metrics block
     d.line([(16, 166), (224, 166)], fill=s["fg"], width=1)
 
+
+def render(state, sub=None, info=None, out=TMP_GIF):
+    s = STATES.get(state, STATES["working"])
+    info = info or {}
+    img = Image.new("RGB", (W, H), s["bg"])
+    d = ImageDraw.Draw(img)
+    _draw_header(d, s, info)
+
+    # ---- status: dot + label inline on one row (default mode middle) ----
+    flab = _font(26, True)
+    label_w = d.textlength(s["label"], font=flab)
+    dot_r = 6
+    gap = 16
+    row_w = dot_r * 2 + gap + label_w          # dot + gap + text
+    rx = CX - row_w / 2                         # left edge of the row
+    dot_cx = rx + dot_r                         # dot center
+    status_y = 68
+    d.ellipse([dot_cx - dot_r, status_y - dot_r, dot_cx + dot_r, status_y + dot_r], fill=s["fg"])
+    if s["pulse"]:
+        d.ellipse([dot_cx - dot_r - 4, status_y - dot_r - 4,
+                   dot_cx + dot_r + 4, status_y + dot_r + 4], outline=s["fg"], width=2)
+    d.text((dot_cx + dot_r + gap, status_y), s["label"], font=flab, fill=s["fg"], anchor="lm")
+
+    sub = (sub or "").strip() or s["sub"]
+    fsub = _font(18, cjk=True)
+    y = 100                                     # margin below the status row
+    for ln in _wrap(sub, fsub, 200, d, max_lines=3):
+        d.text((CX, y), ln, font=fsub, fill=(225, 225, 225), anchor="mm")
+        y += 22
+
+    _draw_footer(d, s, info)
     img.save(out, "GIF")
+    return out
+
+
+# Middle zone where the character GIF is composited in "frame" layout:
+# between the header divider (y=42) and the footer divider (y=166).
+MIDDLE_BOX = (8, 46, 224, 116)   # (x, y, w, h)
+
+
+def _load_gif_frames(path):
+    """Return [(RGB frame, duration_ms), ...] from an animated (or static) GIF.
+
+    Coalesces disposal so every returned frame is a full source-resolution
+    image (handles delta-encoded and transparent GIFs correctly).
+    """
+    frames = []
+    with Image.open(path) as im:
+        n = getattr(im, "n_frames", 1) or 1
+        canvas = None
+        for i in range(n):
+            im.seek(i)
+            dur = max(_MIN_FRAME_MS, int(im.info.get("duration") or 100))
+            disposal = im.info.get("disposal", 0)
+            frame_rgba = im.convert("RGBA")
+            # disposal 2 (restore-to-background) -> reset canvas; 1/none -> accumulate
+            if canvas is None or disposal == 2:
+                canvas = Image.new("RGBA", im.size, (0, 0, 0, 0))
+            canvas = Image.alpha_composite(canvas, frame_rgba)
+            frames.append((canvas.convert("RGB"), dur))
+    if not frames:
+        raise ValueError("no frames in " + path)
+    if len(frames) > _MAX_FRAMES:
+        stride = math.ceil(len(frames) / _MAX_FRAMES)
+        frames = frames[::stride][:_MAX_FRAMES]
+    return frames
+
+
+def _contain_box(src_w, src_h, box):
+    """Aspect-preserving fit inside box=(x,y,w,h); returns paste (x,y,w,h)."""
+    bx, by, bw, bh = box
+    scale = min(bw / src_w, bh / src_h)
+    w = max(1, int(src_w * scale))
+    h = max(1, int(src_h * scale))
+    x = bx + (bw - w) // 2
+    y = by + (bh - h) // 2
+    return x, y, w, h
+
+
+def _cover_resize(img, dst_w, dst_h):
+    """Cover-fit: crop overflow then resize to exactly dst_w x dst_h."""
+    src_r = img.width / img.height
+    dst_r = dst_w / dst_h
+    if src_r > dst_r:
+        new_w = int(img.height * dst_r)
+        left = (img.width - new_w) // 2
+        img = img.crop((left, 0, left + new_w, img.height))
+    else:
+        new_h = int(img.width / dst_r)
+        top = (img.height - new_h) // 2
+        img = img.crop((0, top, img.width, top + new_h))
+    return img.resize((dst_w, dst_h), Image.LANCZOS)
+
+
+def _build_chrome_base(state, info, layout):
+    """Static chrome drawn once: state-colored bg + (frame layout) header/footer."""
+    s = STATES.get(state, STATES["working"])
+    img = Image.new("RGB", (W, H), s["bg"])
+    if layout == "frame":
+        d = ImageDraw.Draw(img)
+        _draw_header(d, s, info)
+        _draw_footer(d, s, info)
+    return img, s
+
+
+def render_gif(state, sub=None, info=None, char_path=None, layout="frame", out=TMP_GIF):
+    """Compose an animated GIF: state-colored chrome + character frames.
+
+    The device loops the result locally, so only one upload is needed per push.
+    Falls back to the caller (raise) on any error so push_state can render static.
+    """
+    info = info or {}
+    src_frames = _load_gif_frames(char_path)
+    chrome_base, _s = _build_chrome_base(state, info, layout)
+
+    out_frames, durations = [], []
+    for src, dur in src_frames:
+        base = chrome_base.copy()
+        if layout == "fullscreen":
+            base.paste(_cover_resize(src, W, H), (0, 0))
+        else:
+            x, y, w, h = _contain_box(src.width, src.height, MIDDLE_BOX)
+            base.paste(src.resize((w, h), Image.LANCZOS), (x, y))
+        out_frames.append(base)
+        durations.append(dur)
+
+    out_frames[0].save(
+        out, "GIF",
+        save_all=True,
+        append_images=out_frames[1:],
+        loop=0,
+        duration=durations,
+        disposal=2,
+    )
     return out
 
 
@@ -684,7 +871,23 @@ def push_state(state, sub=None, info=None):
     except Exception:
         pass
 
-    gif = render(state, sub, info)
+    cfg = load_config()
+    preset = cfg["display"]["preset"]
+    char_path, layout = (None, None)
+    if preset != "default":
+        char_path, layout = _resolve_char(preset, detect_host(), state, cfg)
+    if char_path:
+        try:
+            gif = render_gif(state, sub, info, char_path, layout)
+        except Exception as e:
+            try:
+                with open(ERRLOG, "a") as fh:
+                    fh.write("{} render_gif: {}\n".format(time.strftime("%Y-%m-%d %H:%M:%S"), e))
+            except Exception:
+                pass
+            gif = render(state, sub, info)   # never blank the screen
+    else:
+        gif = render(state, sub, info)
     _upload_with_retry("/photo/upload", "file", gif)
     set_photo_enabled(STATUS_FILE, True)
     json.dump({"key": key, "t": now}, open(THROTTLE_PATH, "w"))
@@ -953,6 +1156,24 @@ def main():
         # Internal detached worker entry point (Windows): debounce + single
         # upload. On Unix this is reached only if invoked directly.
         _flush_worker()
+    elif a == "--preset" and len(args) > 1:
+        val = args[1].strip().lower()
+        if val not in ("default", "hosts", "anime", "custom"):
+            print("preset must be one of: default | hosts | anime | custom")
+            return
+        cfg = load_config()
+        cfg["display"]["preset"] = val
+        json.dump(cfg, open(CONFIG_PATH, "w"), indent=2)
+        print("preset saved:", val, "— mode:", "default" if val == "default" else "gif (animated)")
+    elif a == "--layout" and len(args) > 1:
+        val = args[1].strip().lower()
+        if val not in ("frame", "fullscreen"):
+            print("layout must be: frame | fullscreen")
+            return
+        cfg = load_config()
+        cfg["display"]["layout"] = val
+        json.dump(cfg, open(CONFIG_PATH, "w"), indent=2)
+        print("layout saved:", val)
     else:
         print(__doc__)
 

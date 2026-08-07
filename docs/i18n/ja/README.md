@@ -118,6 +118,44 @@ python3 <plugin>/scripts/agent_glance.py --setup
 |---|---|---|
 | `AGENT_GLANCE_IP` | デバイス IP — **必須** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | パーセントバーのスケールに使うコンテキストウィンドウサイズ | `200000` |
+| `AGENT_GLANCE_PRESET` | 表示プリセット: `default` \| `hosts` \| `anime` \| `custom` | `default` |
+| `AGENT_GLANCE_LAYOUT` | gif モードのレイアウト: `frame` \| `fullscreen` | `frame` |
+
+### GIF モードとプリセット
+
+デフォルトモードは上で説明した静的なステータスフレームです。別のプリセットを選ぶと **gif モード** に切り替わり、中央にキャラクターを配置し、ヘッダーとステータスフッターを維持したままループするアニメーション GIF を合成します — この GIF はデバイス上でローカル再生されるため、状態ごとのアップロードは1回だけでフレームごとのネットワークトラフィックは発生しません。状態は上部のアクセントバーと背景色で引き続き表現されます。
+
+| プリセット | 表示内容 |
+|---|---|
+| `default` | 静的フレーム(従来の挙動) |
+| `hosts` | 同梱のホスト別キャラクター GIF を中央に表示、ヘッダーとフッターは維持 |
+| `anime` | *予約済み* — スロットのみ存在、アートは未定。hosts のキャラクターにフォールバック |
+| `custom` | ユーザー独自の GIF、ホスト別/状態別マッピング(スキーマ参照) |
+
+プリセットは `--preset` CLI フラグで選択します(`--ip` と同じく `config.json` に保存されます):
+
+```
+python3 scripts/agent_glance.py --preset hosts
+```
+
+`hosts` は `assets/hosts/` に中立的なプレースホルダを同梱しています。`<host>.gif` を `~/.agent-glance/gifs/hosts/` に置くことで上書きできます(例: `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`) — ユーザーファイルが同梱ファイルより優先されます。
+
+`custom` は `config.json` の `display.gifs` を読みます。各ホストのエントリは、パス文字列(全状態で1つの GIF)または状態別マップのいずれかで、`"default"` はフォールバックです。また、どのエントリも `{"path": ..., "layout": "fullscreen"}` の形で、そのエントリだけをフルスクリーンにすることもできます:
+
+```json
+"display": {
+  "preset": "custom",
+  "layout": "frame",
+  "gifs": {
+    "default": "/abs/path/fallback.gif",
+    "claude code": { "working": "a.gif", "waiting": "b.gif", "done": "c.gif" },
+    "codex": "/one-gif-for-all-states.gif",
+    "agent": { "path": "x.gif", "layout": "fullscreen" }
+  }
+}
+```
+
+プッシュごとの解決順序: `gifs[host][state]` → `gifs[host]` → `gifs["default"]` → 同梱の hosts プレースホルダ。存在しない、あるいは読み込めない GIF が画面を空白にすることはありません — 静的フレームにフォールバックします。
 
 ## コマンド
 
@@ -128,9 +166,18 @@ python3 <plugin>/scripts/agent_glance.py --setup
 | `/agent-glance:test` | フレームを1つ(または3種類すべて)送信して表示を確認 |
 | `/agent-glance:restore` | デバイスを元の時計・写真の状態に戻す |
 
+一部のオプションは **CLI フラグ専用** です(スラッシュコマンドはありません)。`--ip` と同様に `~/.agent-glance/config.json` に保存されます:
+
+| フラグ | 動作 |
+|---|---|
+| `--ip <IP>` | デバイス IP を保存 |
+| `--preset default\|hosts\|anime\|custom` | 表示モードを切り替え([GIF モード](#gif-モードとプリセット)参照) |
+| `--layout frame\|fullscreen` | gif モードのレイアウト(`frame` はヘッダー+フッターを維持、`fullscreen` は GIF のみ) |
+| `--test [state] [subtitle]` | フレームをプッシュ、現在のプリセットに従うため gif モードのプレビューにも使えます |
+
 ## 仕組み
 
-このファームウェアには **テキスト API がなく**、そもそも「表示」できる対象がありません。代わりにスクリプトが Pillow で 240×240 の GIF を描画してデバイスの Photo アルバムに入れ、その画像だけを有効な写真に、Photo だけを有効なテーマにします — こうすることで画面が他のテーマに切り替わらず固定されます。
+このファームウェアには **テキスト API がなく**、そもそも「表示」できる対象がありません。代わりにスクリプトが Pillow で 240×240 の GIF を描画してデバイスの Photo アルバムに入れ、その画像だけを有効な写真に、Photo だけを有効なテーマにします — こうすることで画面が他のテーマに切り替わらず固定されます。このファームウェアの GIF デコーダは **アニメーション** GIF も再生するため、gif モードではマルチフレーム GIF を合成し、デバイスがそれをローカルでループ再生します — 状態ごとのアップロードは1回、フレームごとのトラフィックは発生しません。
 
 ```
 host lifecycle hook (JSON on stdin)

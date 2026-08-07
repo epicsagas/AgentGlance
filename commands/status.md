@@ -9,6 +9,8 @@ raw output at the user.
    ```bash
    echo "AGENT_GLANCE_IP=${AGENT_GLANCE_IP:-<unset>}"
    echo "AGENT_GLANCE_CONTEXT_LIMIT=${AGENT_GLANCE_CONTEXT_LIMIT:-<unset, default 200000>}"
+   echo "AGENT_GLANCE_PRESET=${AGENT_GLANCE_PRESET:-<unset, default default>}"
+   echo "AGENT_GLANCE_LAYOUT=${AGENT_GLANCE_LAYOUT:-<unset, default frame>}"
    cat ~/.agent-glance/config.json 2>/dev/null || echo "(no config file — env only)"
    ```
 

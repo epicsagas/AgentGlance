@@ -118,6 +118,44 @@ python3 <plugin>/scripts/agent_glance.py --setup
 |---|---|---|
 | `AGENT_GLANCE_IP` | 기기 IP — **필수** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | 퍼센트 바 스케일링에 쓰이는 컨텍스트 윈도우 크기 | `200000` |
+| `AGENT_GLANCE_PRESET` | 화면 프리셋: `default` \| `hosts` \| `anime` \| `custom` | `default` |
+| `AGENT_GLANCE_LAYOUT` | gif 모드 레이아웃: `frame` \| `fullscreen` | `frame` |
+
+### GIF 모드와 프리셋
+
+기본 모드는 위에서 설명한 정적 상태 프레임입니다. 다른 프리셋을 선택하면 **gif 모드**로 전환되어, 중간에 캐릭터가 들어가고 헤더와 상태 푸터는 유지한 채 루프 애니메이션 GIF를 합성합니다. 기기가 이를 로컬에서 재생하므로 상태별로 업로드는 한 번이고 프레임별 네트워크 트래픽은 없습니다. 상태는 상단 액센트 바 + 배경색으로 여전히 표시됩니다.
+
+| 프리셋 | 표시 내용 |
+|---|---|
+| `default` | 정적 프레임 (기존 동작) |
+| `hosts` | 번들된 호스트별 캐릭터 GIF를 중간에 표시, 헤더·푸터 유지 |
+| `anime` | *예약* — 슬롯만 있고 아트는 미정. hosts 캐릭터로 폴백 |
+| `custom` | 사용자 지정 GIF, 호스트별/상태별 매핑 (스키마 참고) |
+
+프리셋은 `--preset` CLI 플래그로 선택합니다 (`--ip`처럼 `config.json`에 저장됨):
+
+```
+python3 scripts/agent_glance.py --preset hosts
+```
+
+`hosts`는 `assets/hosts/`에 중립 플레이스홀더를 기본으로 제공합니다. 덮어쓰려면 `<host>.gif` 파일을 `~/.agent-glance/gifs/hosts/`에 넣으세요 (예: `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`). 사용자 파일이 번들 파일보다 우선합니다.
+
+`custom`은 `config.json`의 `display.gifs`를 읽습니다. 각 호스트 항목은 경로 문자열(모든 상태에同一 GIF)이거나 상태별 맵이며, `"default"`는 폴백입니다. 각 항목은 `{"path": ..., "layout": "fullscreen"}` 형태로 해당 항목만 전체화면으로 지정할 수도 있습니다:
+
+```json
+"display": {
+  "preset": "custom",
+  "layout": "frame",
+  "gifs": {
+    "default": "/절대경로/fallback.gif",
+    "claude code": { "working": "a.gif", "waiting": "b.gif", "done": "c.gif" },
+    "codex": "/모든-상태-동일.gif",
+    "agent": { "path": "x.gif", "layout": "fullscreen" }
+  }
+}
+```
+
+푸시 시 해석 순서: `gifs[host][state]` → `gifs[host]` → `gifs["default"]` → 번들 hosts 플레이스홀더. 없거나 읽을 수 없는 GIF는 화면을 비우지 않고 정적 프레임으로 폴백합니다.
 
 ## 명령어
 
@@ -128,9 +166,18 @@ python3 <plugin>/scripts/agent_glance.py --setup
 | `/agent-glance:test` | 프레임 하나(또는 세 가지 모두)를 전송해 렌더링 확인 |
 | `/agent-glance:restore` | 기기를 원래의 시계·사진 상태로 되돌림 |
 
+일부 옵션은 **CLI 플래그 전용**입니다 (슬래시 명령어 없음). `--ip`처럼 `~/.agent-glance/config.json`에 저장됩니다:
+
+| 플래그 | 동작 |
+|---|---|
+| `--ip <IP>` | 기기 IP 저장 |
+| `--preset default\|hosts\|anime\|custom` | 화면 모드 전환 ([GIF 모드](#gif-모드와-프리셋) 참고) |
+| `--layout frame\|fullscreen` | gif 모드 레이아웃 (`frame`은 헤더+푸터 유지, `fullscreen`은 GIF만) |
+| `--test [state] [subtitle]` | 프레임 전송, 현재 프리셋을 따르므로 gif 모드 미리보기에도 쓰임 |
+
 ## 동작 원리
 
-이 펌웨어에는 **텍스트 API가 없어서**, "출력"할 대상 자체가 없습니다. 대신 스크립트가 Pillow로 240×240 GIF를 렌더링해 기기의 Photo 앨범에 넣고, 그 이미지를 유일하게 활성화된 사진으로, Photo를 유일하게 활성화된 테마로 만들어 — 화면이 다른 테마로 돌아가지 않고 고정되도록 합니다.
+이 펌웨어에는 **텍스트 API가 없어서**, "출력"할 대상 자체가 없습니다. 대신 스크립트가 Pillow로 240×240 GIF를 렌더링해 기기의 Photo 앨범에 넣고, 그 이미지를 유일하게 활성화된 사진으로, Photo를 유일하게 활성화된 테마로 만들어 — 화면이 다른 테마로 돌아가지 않고 고정되도록 합니다. 이 펌웨어의 GIF 디코더는 **애니메이션** GIF도 재생하므로, gif 모드에서는 멀티프레임 GIF를 합성해 기기가 로컬에서 루프로 재생합니다 — 상태별 업로드 한 번, 프레임별 트래픽은 없습니다.
 
 ```
 host lifecycle hook (JSON on stdin)
