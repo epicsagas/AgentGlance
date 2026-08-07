@@ -123,6 +123,9 @@ Die Konfiguration wird **zuerst über Umgebungsvariablen** gelesen und fällt so
 
 ### GIF-Modus & Presets
 
+> [!WARNING]
+> **Warnung zur GIF-Dateigröße**: Zu große GIF-Dateien belasten den Speicher des Geräts (ESP8266 RAM/Flash) stark und können zu unerwarteten Neustarts oder Abstürzen führen. Bitte halte deine GIFs unbedingt unter **< 100 KB**.
+
 Der Standardmodus ist das oben beschriebene statische Status-Frame. Wähle ein anderes Preset, um in den **GIF-Modus** zu wechseln, der eine endlos laufende animierte GIF zusammensetzt (Charakter in der Mitte, Header + Status-Footer bleiben erhalten) und vom Gerät lokal abgespielt wird — ein Upload pro Status, kein Netzwerkverkehr pro Frame. Der Status wird weiterhin über die Akzentleiste oben + die Hintergrundfarbe signalisiert.
 
 | Preset | What it shows |
@@ -160,7 +163,7 @@ Benenne die Datei nach dem Host, den sie ersetzen soll (Kleinschreibung, Leerzei
 |---|---|---|
 | **Optimale Auflösung** | **224 × 116 px** (~1,93:1) oder **116 × 116 px** (1:1) | **240 × 240 px** (1:1 quadratisch) |
 | **Zielbereich** | Passt in `MIDDLE_BOX = (8, 46, 224, 116)` | Deckt den gesamten 1,54" SmallTV-Bildschirm ab |
-| **Empfohlene Dateigröße** | **100 KB – 300 KB** (Max < 500 KB zur Vermeidung von ESP8266 RAM/OOM-Abstürzen) |
+| **Empfohlene Dateigröße** | **< 100 KB** (Absolutes Maximum < 300 KB zur Vermeidung von ESP8266 RAM/OOM-Abstürzen & Neustarts) |
 | **Frame-Anzahl** | **12 – 16 Frames** (Renderer reduziert über absolute Werte hinaus auf `_MAX_FRAMES = 16`) |
 | **Frame-Verzögerung** | **80ms – 150ms** pro Frame (1,2s – 2,0s Schleife) |
 | **Farbpalette** | **64 – 128 Farben** (optimiert Rendering-Geschwindigkeit und Flash-Verschleiß) |

@@ -120,6 +120,9 @@ Config is read **env-var first**, falling back to `~/.agent-glance/config.json` 
 
 ### GIF mode & presets
 
+> [!WARNING]
+> **Warning on GIF Size**: If a GIF file is too large, it places heavy strain on the device's memory (ESP8266 RAM/Flash) and may cause unexpected reboots or crashes. Please keep your GIFs strictly within the recommended specifications (**< 100 KB** recommended).
+
 The default mode is the static status frame described above. Set a different preset to switch to **gif mode**, which composites a looping animated GIF (character in the middle, header + status footer kept) that the device plays locally — one upload per state, no per-frame network traffic. State is still signalled by the top accent bar + background colour.
 
 | Preset | What it shows |
@@ -157,7 +160,7 @@ Name the file after the host it should replace (lowercase, spaces → hyphens):
 |---|---|---|
 | **Optimal Resolution** | **224 × 116 px** (~1.93:1) or **116 × 116 px** (1:1) | **240 × 240 px** (1:1 square) |
 | **Composite Target** | Fits inside `MIDDLE_BOX = (8, 46, 224, 116)` | Covers entire 1.54" SmallTV screen |
-| **Recommended File Size** | **100 KB – 300 KB** (Hard max < 500 KB to avoid ESP8266 RAM/OOM crashes) |
+| **Recommended File Size** | **< 100 KB** (Hard max < 300 KB to avoid ESP8266 RAM/OOM crashes & reboots) |
 | **Frame Count** | **12 – 16 frames** (Script downsamples exceeding frames to `_MAX_FRAMES = 16`) |
 | **Frame Delay** | **80ms – 150ms** per frame (1.2s – 2.0s loop) |
 | **Color Palette** | **64 – 128 colors** (optimizes rendering speed & Flash wear) |

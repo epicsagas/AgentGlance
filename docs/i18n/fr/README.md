@@ -123,6 +123,9 @@ La configuration est lue **d'abord via les variables d'environnement**, puis ret
 
 ### Mode GIF et presets
 
+> [!WARNING]
+> **Avertissement sur la taille des GIF** : Les fichiers GIF volumineux sollicitent fortement la mémoire de l'appareil (RAM/Flash de l'ESP8266) et peuvent provoquer des redémarrages ou des plantages inattendus. Veillez à maintenir vos fichiers sous **< 100 KB**.
+
 Le mode par défaut est l'image statique décrite ci-dessus. Choisir un autre preset bascule en **mode gif**, qui compose un GIF animé en boucle (personnage au centre, en-tête + pied de page d'état conservés) lu localement par l'appareil — un envoi par état, pas de trafic réseau par image. L'état reste signalé par la barre d'accent en haut + la couleur de fond.
 
 | Preset | Ce qu'il affiche |
@@ -160,7 +163,7 @@ Nommez le fichier d'après l'hôte qu'il doit remplacer (minuscules, espaces →
 |---|---|---|
 | **Résolution optimale** | **224 × 116 px** (~1,93:1) ou **116 × 116 px** (1:1) | **240 × 240 px** (carré 1:1) |
 | **Cible de composition** | S'insère dans `MIDDLE_BOX = (8, 46, 224, 116)` | Couvre tout l'écran 1.54" du SmallTV |
-| **Taille de fichier recommandée** | **100 KB – 300 KB** (Max < 500 KB pour éviter les plantages RAM/OOM ESP8266) |
+| **Taille de fichier recommandée** | **< 100 KB** (Maximum strict < 300 KB pour éviter les plantages RAM/OOM et redémarrages ESP8266) |
 | **Nombre d'images** | **12 – 16 images** (le moteur de rendu sous-échantillonne au-delà de `_MAX_FRAMES = 16`) |
 | **Délai d'image** | **80ms – 150ms** par image (boucle de 1.2s – 2.0s) |
 | **Palette de couleurs** | **64 – 128 couleurs** (optimise la vitesse de rendu et l'usure de la mémoire Flash) |

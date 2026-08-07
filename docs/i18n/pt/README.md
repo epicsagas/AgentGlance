@@ -123,6 +123,9 @@ A configuração é lida **primeiro via variáveis de ambiente**, recorrendo a `
 
 ### Modo GIF e predefinições
 
+> [!WARNING]
+> **Aviso sobre o tamanho do GIF**: Arquivos GIF grandes causam uma forte sobrecarga na memória do dispositivo (RAM/Flash do ESP8266) e podem provocar reinicializações ou falhas inesperadas. Mantenha seus arquivos estritamente abaixo de **< 100 KB**.
+
 O modo padrão é o quadro estático de status descrito acima. Escolher outra predefinição alterna para o **modo gif**, que compõe um GIF animado em loop (personagem no meio, com cabeçalho e rodapé de status mantidos) reproduzido localmente pelo dispositivo — um upload por estado, sem tráfego por quadro. O estado ainda é sinalizado pela barra de destaque superior + cor de fundo.
 
 | Predefinição | O que mostra |
@@ -145,7 +148,7 @@ python3 scripts/agent_glance.py --preset hosts
 |---|---|---|
 | **Resolução ideal** | **224 × 116 px** (~1.93:1) ou **116 × 116 px** (1:1) | **240 × 240 px** (quadrado 1:1) |
 | **Alvo de composição** | Ajusta-se dentro de `MIDDLE_BOX = (8, 46, 224, 116)` | Cobre toda a tela de 1.54" do SmallTV |
-| **Tamanho de arquivo recomendado** | **100 KB – 300 KB** (Máx < 500 KB para evitar falhas de RAM/OOM no ESP8266) |
+| **Tamanho de arquivo recomendado** | **< 100 KB** (Máximo estrito < 300 KB para evitar falhas de RAM/OOM e reinicializações no ESP8266) |
 | **Contagem de quadros** | **12 – 16 quadros** (o renderizador reduz quadros excedentes para `_MAX_FRAMES = 16`) |
 | **Atraso de quadro** | **80ms – 150ms** por quadro (loop de 1.2s – 2.0s) |
 | **Paleta de cores** | **64 – 128 cores** (otimiza a velocidade de renderização e desgaste da Flash) |

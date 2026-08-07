@@ -123,6 +123,9 @@ La configurazione viene letta **prima dalle variabili d'ambiente**, e in loro as
 
 ### Modalità GIF e preset
 
+> [!WARNING]
+> **Avviso sulla dimensione GIF**: I file GIF di grandi dimensioni mettono a dura prova la memoria del dispositivo (RAM/Flash dell'ESP8266) e possono causare riavvii o crash inaspettati. Si raccomanda di mantenere i file sotto **< 100 KB**.
+
 La modalità predefinita è il fotogramma di stato statico descritto sopra. Scegli un altro preset per passare alla **modalità gif**, che compone una GIF animata in loop (personaggio al centro, con header + footer di stato mantenuti) riprodotta localmente dal dispositivo — un caricamento per stato, nessun traffico di rete per ogni fotogramma. Lo stato è comunque segnalato dalla barra colorata superiore + dal colore di sfondo.
 
 | Preset | Cosa mostra |
@@ -160,7 +163,7 @@ Dai al file il nome dell'host che deve sostituire (minuscolo, spazi → trattini
 |---|---|---|
 | **Risoluzione ottimale** | **224 × 116 px** (~1.93:1) o **116 × 116 px** (1:1) | **240 × 240 px** (1:1 quadrato) |
 | **Obiettivo di composizione** | Si adatta a `MIDDLE_BOX = (8, 46, 224, 116)` | Copre l'intero schermo SmallTV da 1.54" |
-| **Dimensione file consigliata** | **100 KB – 300 KB** (Max < 500 KB per evitare crash RAM/OOM ESP8266) |
+| **Dimensione file consigliata** | **< 100 KB** (Massimo rigoroso < 300 KB per evitare crash RAM/OOM e riavvii dell'ESP8266) |
 | **Numero di fotogrammi** | **12 – 16 fotogrammi** (il renderer riduce i fotogrammi in eccesso a `_MAX_FRAMES = 16`) |
 | **Ritardo fotogramma** | **80ms – 150ms** per fotogramma (loop da 1.2s – 2.0s) |
 | **Tavolozza colori** | **64 – 128 colori** (ottimizza la velocità di rendering e l'usura della Flash) |

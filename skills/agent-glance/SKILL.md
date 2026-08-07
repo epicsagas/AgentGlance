@@ -120,6 +120,9 @@ first prompt after enabling animates the display.
 
 ## GIF mode (optional)
 
+> [!WARNING]
+> **GIF Size Warning**: GIFs that are too large place heavy strain on ESP8266 RAM/Flash, leading to instability or unexpected device reboots. Keep files strictly within specs (**< 100 KB** recommended).
+
 Beyond the static status frame, gif mode composites a **looping animated GIF** (character in the middle, header + status footer kept) that the firmware decodes and plays locally — one upload per state, no per-frame network traffic. State is still shown via the top accent bar + background colour.
 
 ```bash
@@ -150,7 +153,7 @@ A missing or unreadable GIF falls back to the static frame — the screen never 
 |---|---|---|
 | **Optimal Resolution** | **224 × 116 px** (1.93:1) or **116 × 116 px** (1:1) | **240 × 240 px** (1:1) |
 | **Middle Box Target** | `(8, 46, 224, 116)` | Covers full screen |
-| **Recommended File Size** | **100 KB – 300 KB** (Hard max < 500 KB to prevent ESP8266 OOM/403) |
+| **Recommended File Size** | **< 100 KB** (Hard max < 300 KB to prevent ESP8266 RAM/OOM crashes & reboots) |
 | **Frame Count** | **12 – 16 frames** (Script downsamples exceeding frames to `_MAX_FRAMES = 16`) |
 | **Frame Delay** | **80ms – 150ms** per frame (1.2s – 2.0s loop) |
 | **Colors** | **64 – 128 colors** |

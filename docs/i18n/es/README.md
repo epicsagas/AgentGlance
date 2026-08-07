@@ -123,6 +123,9 @@ La configuración se lee **primero desde variables de entorno**, y si no existen
 
 ### Modo GIF y presets
 
+> [!WARNING]
+> **Advertencia sobre el tamaño del GIF**: Los archivos GIF grandes imponen una gran carga en la memoria del dispositivo (RAM/Flash del ESP8266) y pueden provocar reinicios o fallos inesperados. Mantén tus archivos estrictamente por debajo de **< 100 KB**.
+
 El modo predeterminado es el fotograma de estado estático descrito más arriba. Elige otro preset para cambiar al **modo gif**, que compone un GIF animado en bucle (personaje en el centro, con cabecera + pie de estado conservados) que el dispositivo reproduce localmente — una subida por estado, sin tráfico de red por fotograma. El estado se sigue señalizando con la barra de acento superior + el color de fondo.
 
 | Preset | Qué muestra |
@@ -145,7 +148,7 @@ python3 scripts/agent_glance.py --preset hosts
 |---|---|---|
 | **Resolución óptima** | **224 × 116 px** (~1.93:1) o **116 × 116 px** (1:1) | **240 × 240 px** (cuadrado 1:1) |
 | **Objetivo de composición** | Se ajusta dentro de `MIDDLE_BOX = (8, 46, 224, 116)` | Cubre toda la pantalla de 1.54" de SmallTV |
-| **Tamaño de archivo recomendado** | **100 KB – 300 KB** (Máx < 500 KB para evitar fallos de RAM/OOM en ESP8266) |
+| **Tamaño de archivo recomendado** | **< 100 KB** (Máximo estricto < 300 KB para evitar fallos de RAM/OOM y reinicios en ESP8266) |
 | **Número de fotogramas** | **12 – 16 fotogramas** (el renderizador reduce los fotogramas excedentes a `_MAX_FRAMES = 16`) |
 | **Retraso de fotograma** | **80ms – 150ms** por fotograma (bucle de 1.2s – 2.0s) |
 | **Paleta de colores** | **64 – 128 colores** (optimiza la velocidad de renderizado y el desgaste de Flash) |
