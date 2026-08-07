@@ -15,7 +15,7 @@ Driven by Claude Code hooks (reads the hook JSON object from stdin).
   agent_glance.py --test working|waiting|done [subtitle]
   agent_glance.py --flush-queue           # (internal) detached worker: debounce + single upload
 """
-import sys, os, json, time, mimetypes, uuid, subprocess, glob, re, math
+import sys, os, json, time, mimetypes, uuid, subprocess, glob, re, math, shutil, hashlib
 import urllib.request, urllib.parse, urllib.error
 from contextlib import contextmanager
 from PIL import Image, ImageDraw, ImageFont
@@ -54,6 +54,7 @@ CX = W // 2
 USER_GIF_DIR = os.path.join(STATE_DIR, "gifs")           # ~/.agent-glance/gifs
 USER_HOSTS_DIR = os.path.join(USER_GIF_DIR, "hosts")     # user overrides (precedence)
 USER_ANIME_DIR = os.path.join(USER_GIF_DIR, "anime")
+GIF_CACHE_DIR = os.path.join(USER_GIF_DIR, ".cache")     # normalized sources (one per src+layout)
 BUNDLED_HOSTS_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "assets", "hosts"))
 _MAX_FRAMES = 16      # bound output size / decode time / flash wear
 _MIN_FRAME_MS = 50    # floor; below this the device stutters
@@ -167,6 +168,136 @@ def _resolve_char(preset, host, state, cfg):
     if os.path.exists(bundled):
         return bundled, layout_default
     return None, None
+
+
+# ---------------------------------------------------------------- gif normalizer (safety guard)
+# A user-supplied GIF can be arbitrary size/frame count; both upload paths can
+# then OOM the ESP8266 (fullscreen sends bytes verbatim; composite re-encodes
+# every frame as a full frame). _normalize_gif converts any source to spec
+# (<= ~16 frames, <= 300 KB, layout-correct dims), cached per source+layout.
+# Already-compliant sources pass through untouched (zero cost, lossless).
+# ffmpeg is a soft dependency — without it, the source is returned as-is and
+# the device relies on render_gif's _MAX_FRAMES cap alone (no regression).
+_MAX_BYTES = 300_000
+_NORM_TARGET_FRAMES = 14
+
+_FFMPEG_BIN = None  # memoized by _have_ffmpeg
+
+
+def _have_ffmpeg():
+    global _FFMPEG_BIN
+    if _FFMPEG_BIN is None:
+        _FFMPEG_BIN = shutil.which("ffmpeg") or False
+    return _FFMPEG_BIN
+
+
+def _gif_meta(path):
+    """(width, height, n_frames) via ffprobe, or None if ffprobe unavailable/fails."""
+    binp = shutil.which("ffprobe")
+    if not binp:
+        return None
+    try:
+        out = subprocess.check_output(
+            [binp, "-v", "error", "-select_streams", "v",
+             "-show_entries", "stream=width,height,nb_frames",
+             "-of", "default=noprint_wrappers=1:nokey=1", path],
+            timeout=8,
+        ).decode().split()
+        w, h, n = int(out[0]), int(out[1]), int(out[2]) if len(out) > 2 else 1
+        return w, h, n
+    except Exception:
+        return None
+
+
+def _is_compliant(path, layout):
+    """True if a source already meets spec and needs no normalization."""
+    try:
+        if os.path.getsize(path) > _MAX_BYTES:
+            return False
+    except OSError:
+        return False
+    meta = _gif_meta(path)
+    if not meta:
+        return False  # can't prove it; let the normalizer try
+    w, h, n = meta
+    if n > _MAX_FRAMES:
+        return False
+    if layout == "fullscreen":
+        return (w, h) == (W, H)
+    # frame layout: must fit inside MIDDLE_BOX
+    return w <= 224 and h <= 116
+
+
+def _norm_key(path, layout):
+    h = hashlib.md5(
+        "{}|{}|{}|{}|v1".format(
+            os.path.abspath(path),
+            int(os.path.getmtime(path)),
+            os.path.getsize(path),
+            layout,
+        ).encode()
+    ).hexdigest()[:16]
+    return h
+
+
+def _ffmpeg_normalize(src, layout, out, max_colors):
+    """One ffmpeg pass: even frame sampling + crop/scale + small palette. True on success."""
+    meta = _gif_meta(src) or (None, None, None)
+    n = meta[2] if meta and meta[2] else None
+    step = max(1, round(n / _NORM_TARGET_FRAMES)) if n else 1
+    if layout == "fullscreen":
+        geom = "scale=240:240:force_original_aspect_ratio=increase,crop=240:240"
+    else:
+        geom = "scale=224:116:force_original_aspect_ratio=decrease"
+    vf = ("select='not(mod(n,{}))',{},split[s0][s1];"
+          "[s0]palettegen=max_colors={}:stats_mode=diff[p];"
+          "[s1][p]paletteuse=dither=bayer").format(step, geom, max_colors)
+    try:
+        subprocess.check_call(
+            [_have_ffmpeg(), "-y", "-i", src, "-vf", vf, "-vsync", "0", out],
+            timeout=30,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        return os.path.exists(out) and os.path.getsize(out) > 0
+    except Exception:
+        return False
+
+
+def _normalize_gif(src, layout):
+    """Return a spec-compliant path for `src`, caching the result. Soft-dep ffmpeg."""
+    if not src or not os.path.exists(src):
+        return src
+    if not _have_ffmpeg():
+        return src  # no ffmpeg -> trust render_gif's _MAX_FRAMES cap (no regression)
+    if _is_compliant(src, layout):
+        return src  # already good (e.g. hand-tuned) -> pass through lossless
+    try:
+        os.makedirs(GIF_CACHE_DIR, exist_ok=True)
+    except OSError:
+        return src
+    key = _norm_key(src, layout)
+    cached = os.path.join(GIF_CACHE_DIR, key + ".gif")
+    meta_path = os.path.join(GIF_CACHE_DIR, key + ".meta.json")
+    # cache hit
+    if os.path.exists(cached) and os.path.exists(meta_path):
+        try:
+            if json.load(open(meta_path)).get("key") == key:
+                return cached
+        except Exception:
+            pass
+    # cache miss -> normalize (64 colors, fall back to 32 if still heavy)
+    tmp = cached + ".tmp"
+    ok = _ffmpeg_normalize(src, layout, tmp, 64)
+    if ok and os.path.getsize(tmp) > _MAX_BYTES:
+        ok = _ffmpeg_normalize(src, layout, tmp, 32)
+    if not ok or not os.path.exists(tmp):
+        return src  # ffmpeg failed -> don't block the push
+    try:
+        os.replace(tmp, cached)
+        json.dump({"key": key}, open(meta_path, "w"))
+        return cached
+    except OSError:
+        return src
 
 
 def base_url():
@@ -364,7 +495,9 @@ def _resolve_state_key(ev, data):
         tool = (data.get("toolCall") or {}).get("name") or data.get("tool_name") or data.get("tool") or ""
         if tool == "ask_permission":
             return "waiting"
-        return "working"
+        # Tool hooks can fire dozens of times in one turn. The working
+        # transition is already reported by UserPromptSubmit/PreInvocation.
+        return None
     return EVENT_STATE.get(ev)
 
 
@@ -519,45 +652,107 @@ def _estimate_tokens(text):
     return max(1, int(len(str(text)) / 3.5))
 
 
-def parse_transcript(path=None, cwd=None):
-    """Pull model + token usage from session transcript JSONL across hosts."""
+def _apply_agy_status_cache(info, cwd, fallback_limit):
+    """Use agy's live status cache only for an agy invocation.
+
+    This cache mirrors agy's TUI exactly, but is shared at a fixed path.  It
+    must never be consulted by Claude/Codex or their display inherits agy's
+    model and token counters.
+    """
+    cache_file = os.path.expanduser("~/.agent-glance/last_status.json")
+    if not os.path.exists(cache_file):
+        return False
+    try:
+        cache_data = json.load(open(cache_file))
+        cache_cwd = (cache_data.get("workspace") or {}).get("current_dir") or cache_data.get("cwd")
+        if cwd and cache_cwd and os.path.abspath(cwd) != os.path.abspath(cache_cwd):
+            return False
+        cw = cache_data.get("context_window") or {}
+        m = cache_data.get("model") or {}
+        c_in = cw.get("total_input_tokens") or cw.get("input_tokens") or 0
+        c_out = cw.get("total_output_tokens") or cw.get("output_tokens") or 0
+        c_pct = cw.get("used_percentage")
+        c_limit = cw.get("context_window_size") or cw.get("max_tokens")
+        c_model = m.get("id") or m.get("display_name")
+        if c_pct is None and not c_in and not c_out:
+            return False
+        if c_model:
+            info["model"] = str(c_model)
+        info["limit"] = int(c_limit or resolve_model_context_limit(info["model"], fallback_limit))
+        info["cum_in"], info["cum_out"] = int(c_in), int(c_out)
+        if c_pct is not None:
+            info["pct"] = int(round(float(c_pct)))
+            info["ctx"] = int(info["limit"] * info["pct"] / 100)
+        else:
+            info["ctx"] = info["cum_in"] + info["cum_out"]
+            info["pct"] = min(100, round(info["ctx"] / info["limit"] * 100)) if info["limit"] else 0
+        return True
+    except Exception:
+        return False
+
+
+def _codex_model(payload):
+    """Extract Codex's selected model from any of its session event shapes."""
+    state = payload.get("state") or {}
+    settings = payload.get("thread_settings") or {}
+    collaboration = payload.get("collaboration_mode") or {}
+    return (payload.get("model") or state.get("model") or settings.get("model")
+            or (collaboration.get("settings") or {}).get("model")
+            or ((state.get("collaboration_mode") or {}).get("model")))
+
+
+def _parse_codex_transcript(path, info, fallback_limit):
+    """Parse exact model/context/token counters emitted in Codex JSONL."""
+    latest_total = latest_turn = None
+    peak_ctx = 0
+    try:
+        with open(path, errors="ignore") as fh:
+            for line in fh:
+                try:
+                    event = json.loads(line)
+                except Exception:
+                    continue
+                payload = event.get("payload") or {}
+                model = _codex_model(payload)
+                if model:
+                    info["model"] = str(model)
+                usage_info = payload.get("info") or {}
+                total = usage_info.get("total_token_usage")
+                turn = usage_info.get("last_token_usage")
+                if isinstance(total, dict):
+                    latest_total = total
+                if isinstance(turn, dict):
+                    latest_turn = turn
+                    turn_ctx = int(turn.get("total_tokens") or turn.get("input_tokens") or 0)
+                    if peak_ctx > 10000 and turn_ctx < peak_ctx * 0.75:
+                        info["compacted"] = True
+                    peak_ctx = max(peak_ctx, turn_ctx)
+                limit = usage_info.get("model_context_window") or payload.get("model_context_window")
+                if limit:
+                    info["limit"] = int(limit)
+    except Exception:
+        return info
+
+    # `input_tokens` and `output_tokens` are already inclusive totals in the
+    # Codex event schema. Cached/reasoning fields are informative subsets, not
+    # values to add again.
+    if latest_total:
+        info["cum_in"] = int(latest_total.get("input_tokens") or 0)
+        info["cum_out"] = int(latest_total.get("output_tokens") or 0)
+    if latest_turn:
+        info["ctx"] = int(latest_turn.get("total_tokens") or latest_turn.get("input_tokens") or 0)
+    info["limit"] = info.get("limit") or resolve_model_context_limit(info["model"], fallback_limit)
+    return info
+
+
+def parse_transcript(path=None, cwd=None, host=None):
+    """Pull model + token usage from the invoking host's session data only."""
     fallback_limit = load_config().get("context_limit", 200000)
     info = {"model": "-", "ctx": 0, "cum_in": 0, "cum_out": 0, "compacted": False, "limit": fallback_limit}
+    host = host or detect_host()
 
-    # Check live status cache (~/.agent-glance/last_status.json) for 100% exact parity with TUI
-    cache_file = os.path.expanduser("~/.agent-glance/last_status.json")
-    if os.path.exists(cache_file):
-        try:
-            with open(cache_file) as cf:
-                cache_data = json.load(cf)
-            cache_cwd = (cache_data.get("workspace") or {}).get("current_dir") or cache_data.get("cwd")
-            if not cwd or not cache_cwd or os.path.basename(cwd.rstrip("/")) == os.path.basename(cache_cwd.rstrip("/")):
-                cw = cache_data.get("context_window") or {}
-                m = cache_data.get("model") or {}
-                c_in = cw.get("total_input_tokens") or cw.get("input_tokens") or 0
-                c_out = cw.get("total_output_tokens") or cw.get("output_tokens") or 0
-                c_pct = cw.get("used_percentage")
-                c_limit = cw.get("context_window_size") or cw.get("max_tokens")
-                c_model = m.get("id") or m.get("display_name")
-
-                if c_pct is not None or c_in or c_out:
-                    if c_model:
-                        info["model"] = str(c_model)
-                    if c_limit:
-                        info["limit"] = int(c_limit)
-                    else:
-                        info["limit"] = resolve_model_context_limit(info["model"], fallback_limit)
-                    info["cum_in"] = int(c_in)
-                    info["cum_out"] = int(c_out)
-                    if c_pct is not None:
-                        info["pct"] = int(round(float(c_pct)))
-                        info["ctx"] = int(info["limit"] * info["pct"] / 100)
-                    else:
-                        info["ctx"] = info["cum_in"] + info["cum_out"]
-                        info["pct"] = min(100, round(info["ctx"] / info["limit"] * 100)) if info["limit"] else 0
-                    return info
-        except Exception:
-            pass
+    if host == "antigravity" and _apply_agy_status_cache(info, cwd, fallback_limit):
+        return info
 
     if not path or not os.path.exists(path):
         candidates = []
@@ -565,16 +760,17 @@ def parse_transcript(path=None, cwd=None):
 
         all_claude = glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl"))
         all_agy = glob.glob(os.path.expanduser("~/.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript.jsonl"))
-        all_codex = glob.glob(os.path.expanduser("~/.codex/sessions/*/*.jsonl")) + glob.glob(os.path.expanduser("~/.codex/*/*.jsonl"))
+        all_codex = glob.glob(os.path.expanduser("~/.codex/sessions/**/*.jsonl"), recursive=True)
 
+        host_files = {
+            "claude code": all_claude,
+            "codex": all_codex,
+            "antigravity": all_agy,
+        }.get(host, all_claude + all_agy + all_codex)
         if proj_name:
-            candidates.extend([p for p in all_claude if proj_name in p])
-            candidates.extend([p for p in all_codex if proj_name in p])
-            if not candidates and ("antigravity" in proj_name.lower() or "agentglance" in proj_name.lower()):
-                candidates.extend(all_agy)
-
+            candidates = [p for p in host_files if proj_name in p]
         if not candidates:
-            candidates = all_claude + all_agy + all_codex
+            candidates = host_files
 
         if candidates:
             candidates.sort(key=os.path.getmtime)
@@ -585,7 +781,10 @@ def parse_transcript(path=None, cwd=None):
     if not os.path.exists(path):
         return info
 
-    is_agy = "antigravity-cli" in path or ".system_generated" in path
+    is_agy = host == "antigravity" or "antigravity-cli" in path or ".system_generated" in path
+    is_codex = host == "codex" or "/.codex/" in path
+    if is_codex:
+        return _parse_codex_transcript(path, info, fallback_limit)
     peak_in = 0
     last_u = None
 
@@ -605,11 +804,9 @@ def parse_transcript(path=None, cwd=None):
                     tool_calls = json.dumps(o.get("tool_calls", [])) if o.get("tool_calls") else ""
 
                     if stype in ("USER_INPUT", "SYSTEM") and "Model Selection" in content:
-                        for line_c in content.splitlines():
-                            if line_c.strip().startswith("Model Selection"):
-                                parts = line_c.split("to ")
-                                if len(parts) > 1:
-                                    info["model"] = parts[1].rstrip(".").strip()
+                        match = re.search(r"Model Selection.*?\bto\s+(.+?)(?:\.\s|\.$|$)", content, re.S)
+                        if match:
+                            info["model"] = match.group(1).strip()
 
                     if stype == "CHECKPOINT":
                         info["compacted"] = True
@@ -826,6 +1023,23 @@ def render_gif(state, sub=None, info=None, char_path=None, layout="frame", out=T
     Falls back to the caller (raise) on any error so push_state can render static.
     """
     info = info or {}
+    # Fullscreen + source already fills the 240x240 frame: the state-colored
+    # base is fully covered, so recompositing only bloats the payload (PIL
+    # re-encodes every frame as a full frame, destroying the source's
+    # inter-frame delta compression — a 200 KB source can upload as 450 KB).
+    # Send the source bytes verbatim and skip the round-trip through PIL.
+    if layout == "fullscreen":
+        try:
+            with Image.open(char_path) as probe:
+                if probe.size == (W, H):
+                    with open(char_path, "rb") as fh:
+                        data = fh.read()
+                    if data[:6] in (b"GIF87a", b"GIF89a"):
+                        with open(out, "wb") as fh:
+                            fh.write(data)
+                        return out
+        except Exception:
+            pass  # fall through to the compositing path
     src_frames = _load_gif_frames(char_path)
     chrome_base, _s = _build_chrome_base(state, info, layout)
 
@@ -870,19 +1084,25 @@ def _last_pushed():
 
 def push_state(state, sub=None, info=None):
     """Render + upload a state. Throttles identical re-pushes to spare flash."""
-    key = "{}|{}".format(state, sub or "")
+    cfg = load_config()
+    gif_mode = cfg["display"]["preset"] != "default"
+    # A GIF screen does not render hook subtitles. Their changing text must not
+    # turn one visible state into repeated full-GIF writes.
+    key = "{}|{}".format(state, "" if gif_mode else (sub or ""))
     now = time.time()
     project = (info or {}).get("project")
-    prev_state, _prev_project, prev_key, prev_t = _last_pushed()
-    # Only throttle if the state AND subtitle are identical. State transitions ALWAYS push!
-    if prev_state == state and prev_key == key and now - prev_t < THROTTLE_SEC:
+    prev_state, prev_project, prev_key, prev_t = _last_pushed()
+    # State transitions always push; another project must receive its first frame.
+    if (prev_state == state and prev_key == key and prev_project == project
+            and now - prev_t < THROTTLE_SEC):
         return False  # identical state pushed recently -> skip
 
-    cfg = load_config()
     preset = cfg["display"]["preset"]
     char_path, layout = (None, None)
     if preset != "default":
         char_path, layout = _resolve_char(preset, detect_host(), state, cfg)
+    if char_path:
+        char_path = _normalize_gif(char_path, layout)  # safety guard: bound size/frames (soft-dep ffmpeg)
     if char_path:
         try:
             gif = render_gif(state, sub, info, char_path, layout)
@@ -1045,10 +1265,7 @@ EVENT_STATE = {
     "PreInvocation":     "working",   # agy
     "Notification":      "waiting",   # claude
     "PermissionRequest": "waiting",   # codex
-    "PreToolUse":        "working",   # claude, codex, agy
-    "PostToolUse":       "working",   # claude, codex, agy
     "Stop":              "done",      # claude, codex, agy
-    "SubagentStop":      "done",      # claude, codex
 }
 
 
@@ -1105,7 +1322,7 @@ def _maybe_emit_agy_contract(ev):
 def _build_info(data, tp):
     """Assemble the metrics block pushed with a state (model/tokens/project)."""
     cwd = data.get("cwd") or (data.get("workspacePaths") or [None])[0]
-    info = parse_transcript(tp, cwd=cwd)
+    info = parse_transcript(tp, cwd=cwd, host=detect_host())
     info["project"] = project_name(cwd)
     return info
 
@@ -1123,19 +1340,6 @@ def handle_hook():
         # Even ignored events must answer agy's output contract.
         _maybe_emit_agy_contract(ev)
         return
-
-    # Gif mode renders + uploads a whole character animation per push, which
-    # the device can't keep up with if every tool call re-fires it. "working"
-    # is sticky once shown: only a real transition (prompt submit, done,
-    # waiting) needs a fresh push, so PreToolUse/PostToolUse chatter during an
-    # already-"working" turn is a no-op.
-    if ev in ("PreToolUse", "PostToolUse") and state == "working":
-        if load_config()["display"]["preset"] != "default":
-            cwd = data.get("cwd") or (data.get("workspacePaths") or [None])[0]
-            last_state, last_project, _k, _t = _last_pushed()
-            if last_state == "working" and last_project == project_name(cwd):
-                _maybe_emit_agy_contract(ev)
-                return
 
     # Enqueue and let a single detached worker coalesce competing events under
     # a device lock, so the screen reflects the highest-priority, latest state.
