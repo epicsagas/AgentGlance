@@ -104,16 +104,37 @@ def _host_filename(host):
 
 
 def _unpack_entry(entry, default_layout):
-    """A custom gifs entry is either a path string or {"path":..,"layout":..}."""
+    """A custom gifs entry is either a path string or {"path":..,"layout":..}.
+
+    A relative path is resolved against USER_GIF_DIR (~/.agent-glance/gifs) so
+    users can just drop files there; an absolute path is used as-is for
+    anyone keeping GIFs elsewhere.
+    """
     if isinstance(entry, dict):
-        return entry.get("path"), entry.get("layout", default_layout)
-    return entry, default_layout
+        path, layout = entry.get("path"), entry.get("layout", default_layout)
+    else:
+        path, layout = entry, default_layout
+    if path and not os.path.isabs(path):
+        path = os.path.join(USER_GIF_DIR, path)
+    return path, layout
+
+
+def _pick_state(entry, state):
+    """Pick the per-state candidate out of a gifs[host]/gifs["default"] value.
+
+    A per-state map (e.g. {"working":..,"waiting":..,"done":..}) is keyed by
+    `state`, falling back to its own "default" sub-key; a flat entry (str, or
+    {"path":..,"layout":..}) applies to every state as-is.
+    """
+    if isinstance(entry, dict) and "path" not in entry:
+        return entry.get(state) or entry.get("default")
+    return entry
 
 
 def _resolve_char(preset, host, state, cfg):
     """Resolve (char_path, layout) for this push, or (None, None) to fall back.
 
-    custom : gifs[host][state] -> gifs[host] (dict inner default, or str) -> gifs["default"]
+    custom : gifs[host][state] -> gifs[host] (flat) -> gifs["default"][state] -> gifs["default"] (flat)
     anime  : user anime override (fullscreen); else hosts placeholder fallback
     hosts  : user override -> bundled placeholder
     """
@@ -123,14 +144,9 @@ def _resolve_char(preset, host, state, cfg):
     stem = _host_filename(host)
 
     if preset == "custom":
-        host_entry = gifs.get(host)
-        cand = None
-        if isinstance(host_entry, dict):
-            cand = host_entry.get(state) or host_entry.get("default")
-        elif isinstance(host_entry, str):
-            cand = host_entry
-        elif "default" in gifs:
-            cand = gifs["default"]
+        cand = _pick_state(gifs.get(host), state) if host in gifs else None
+        if not cand and "default" in gifs:
+            cand = _pick_state(gifs["default"], state)
         if cand:
             path, layout = _unpack_entry(cand, layout_default)
             if path and os.path.exists(path):
@@ -792,21 +808,6 @@ def _contain_box(src_w, src_h, box):
     return x, y, w, h
 
 
-def _cover_resize(img, dst_w, dst_h):
-    """Cover-fit: crop overflow then resize to exactly dst_w x dst_h."""
-    src_r = img.width / img.height
-    dst_r = dst_w / dst_h
-    if src_r > dst_r:
-        new_w = int(img.height * dst_r)
-        left = (img.width - new_w) // 2
-        img = img.crop((left, 0, left + new_w, img.height))
-    else:
-        new_h = int(img.width / dst_r)
-        top = (img.height - new_h) // 2
-        img = img.crop((0, top, img.width, top + new_h))
-    return img.resize((dst_w, dst_h), Image.LANCZOS)
-
-
 def _build_chrome_base(state, info, layout):
     """Static chrome drawn once: state-colored bg + (frame layout) header/footer."""
     s = STATES.get(state, STATES["working"])
@@ -832,7 +833,7 @@ def render_gif(state, sub=None, info=None, char_path=None, layout="frame", out=T
     for src, dur in src_frames:
         base = chrome_base.copy()
         if layout == "fullscreen":
-            base.paste(_cover_resize(src, W, H), (0, 0))
+            base.paste(src.resize((W, H), Image.LANCZOS), (0, 0))
         else:
             x, y, w, h = _contain_box(src.width, src.height, MIDDLE_BOX)
             base.paste(src.resize((w, h), Image.LANCZOS), (x, y))
@@ -856,20 +857,26 @@ def _trim(text, n=40):
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
+def _last_pushed():
+    """Best-effort (state, key, t) of the most recent successful push, or (None, None, 0)."""
+    try:
+        prev = json.load(open(THROTTLE_PATH))
+        prev_key = prev.get("key", "")
+        prev_state = prev_key.split("|")[0] if "|" in prev_key else ""
+        return prev_state, prev.get("project"), prev_key, prev.get("t", 0)
+    except Exception:
+        return None, None, None, 0
+
+
 def push_state(state, sub=None, info=None):
     """Render + upload a state. Throttles identical re-pushes to spare flash."""
     key = "{}|{}".format(state, sub or "")
     now = time.time()
-    try:
-        if os.path.exists(THROTTLE_PATH):
-            prev = json.load(open(THROTTLE_PATH))
-            prev_key = prev.get("key", "")
-            prev_state = prev_key.split("|")[0] if "|" in prev_key else ""
-            # Only throttle if the state AND subtitle are identical. State transitions ALWAYS push!
-            if prev_state == state and prev_key == key and now - prev.get("t", 0) < THROTTLE_SEC:
-                return False  # identical state pushed recently -> skip
-    except Exception:
-        pass
+    project = (info or {}).get("project")
+    prev_state, _prev_project, prev_key, prev_t = _last_pushed()
+    # Only throttle if the state AND subtitle are identical. State transitions ALWAYS push!
+    if prev_state == state and prev_key == key and now - prev_t < THROTTLE_SEC:
+        return False  # identical state pushed recently -> skip
 
     cfg = load_config()
     preset = cfg["display"]["preset"]
@@ -890,7 +897,7 @@ def push_state(state, sub=None, info=None):
         gif = render(state, sub, info)
     _upload_with_retry("/photo/upload", "file", gif)
     set_photo_enabled(STATUS_FILE, True)
-    json.dump({"key": key, "t": now}, open(THROTTLE_PATH, "w"))
+    json.dump({"key": key, "t": now, "project": project}, open(THROTTLE_PATH, "w"))
     return True
 
 
@@ -1116,6 +1123,19 @@ def handle_hook():
         # Even ignored events must answer agy's output contract.
         _maybe_emit_agy_contract(ev)
         return
+
+    # Gif mode renders + uploads a whole character animation per push, which
+    # the device can't keep up with if every tool call re-fires it. "working"
+    # is sticky once shown: only a real transition (prompt submit, done,
+    # waiting) needs a fresh push, so PreToolUse/PostToolUse chatter during an
+    # already-"working" turn is a no-op.
+    if ev in ("PreToolUse", "PostToolUse") and state == "working":
+        if load_config()["display"]["preset"] != "default":
+            cwd = data.get("cwd") or (data.get("workspacePaths") or [None])[0]
+            last_state, last_project, _k, _t = _last_pushed()
+            if last_state == "working" and last_project == project_name(cwd):
+                _maybe_emit_agy_contract(ev)
+                return
 
     # Enqueue and let a single detached worker coalesce competing events under
     # a device lock, so the screen reflects the highest-priority, latest state.
