@@ -65,7 +65,6 @@ USER_HOSTS_DIR = os.path.join(USER_GIF_DIR, "hosts")     # user overrides (prece
 USER_ANIME_DIR = os.path.join(USER_GIF_DIR, "anime")
 GIF_CACHE_DIR = os.path.join(USER_GIF_DIR, ".cache")     # normalized sources (one per src+layout)
 BUNDLED_GIF_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "assets", "gif"))
-BUNDLED_HOSTS_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "assets", "hosts"))
 _MAX_FRAMES = 16      # bound output size / decode time / flash wear
 _MIN_FRAME_MS = 50    # floor; below this the device stutters
 
@@ -174,11 +173,9 @@ def _resolve_char(preset, host, state, cfg):
     user = os.path.join(USER_HOSTS_DIR, stem)
     if os.path.exists(user):
         return user, layout_default
-    # Bundled real GIFs (assets/gif/) first, monogram placeholders (assets/hosts/) as final fallback.
-    for bdir in (BUNDLED_GIF_DIR, BUNDLED_HOSTS_DIR):
-        bundled = os.path.join(bdir, stem)
-        if os.path.exists(bundled):
-            return bundled, layout_default
+    bundled = os.path.join(BUNDLED_GIF_DIR, stem)
+    if os.path.exists(bundled):
+        return bundled, layout_default
     return None, None
 
 
@@ -1078,7 +1075,9 @@ def render_gif(state, sub=None, info=None, char_path=None, layout="frame", out=T
         else:
             x, y, w, h = _contain_box(src.width, src.height, MIDDLE_BOX)
             base.paste(src.resize((w, h), Image.LANCZOS), (x, y))
-        out_frames.append(base)
+        # Quantize composed frame to 64 colors to prevent size bloat in frame layout
+        q = base.quantize(colors=64, method=Image.Quantize.MEDIANCUT)
+        out_frames.append(q)
         durations.append(dur)
 
     out_frames[0].save(
@@ -1088,6 +1087,7 @@ def render_gif(state, sub=None, info=None, char_path=None, layout="frame", out=T
         loop=0,
         duration=durations,
         disposal=2,
+        optimize=True,
     )
     return out
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """One-time generator for the bundled per-host placeholder GIFs.
 
-Produces neutral animated placeholders in assets/hosts/<host>.gif so that gif
+Produces neutral animated placeholders in assets/gif/<host>.gif so that gif
 mode (preset `hosts`) works out of the box. Users replace these by dropping
 their own <host>.gif into ~/.agent-glance/gifs/hosts/.
 
@@ -24,7 +24,7 @@ HOSTS = {
 SIZE = 120
 FRAMES = 12
 MS = 100
-OUT_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "hosts"))
+OUT_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "gif"))
 
 
 def _font(size):

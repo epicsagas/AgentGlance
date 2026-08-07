@@ -140,7 +140,7 @@ python3 <plugin>/scripts/agent_glance.py --setup
 python3 scripts/agent_glance.py --preset hosts
 ```
 
-`hosts`는 `assets/hosts/`에 중립 플레이스홀더를 기본 제공하므로 바로 동작합니다. 직접 캐릭터를 쓰려면 GIF 파일을 사용자 디렉터리에 넣으세요 — 번들 파일보다 우선 적용되며, 다음 상태 푸시 때 화면에 반영됩니다 (재시작 불필요):
+`hosts`는 `assets/gif/`에 중립 플레이스홀더를 기본 제공하므로 바로 동작합니다. 직접 캐릭터를 쓰려면 GIF 파일을 사용자 디렉터리에 넣으세요 — 번들 파일보다 우선 적용되며, 다음 상태 푸시 때 화면에 반영됩니다 (재시작 불필요):
 
 ```bash
 mkdir -p ~/.agent-glance/gifs/hosts

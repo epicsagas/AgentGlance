@@ -140,7 +140,7 @@ python3 <plugin>/scripts/agent_glance.py --setup
 python3 scripts/agent_glance.py --preset hosts
 ```
 
-`hosts` は `assets/hosts/` に中立的なプレースホルダを同梱しています。`<host>.gif` を `~/.agent-glance/gifs/hosts/` に置くことで上書きできます(例: `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`) — ユーザーファイルが同梱ファイルより優先されます。
+`hosts` は `assets/gif/` に中立的なプレースホルダを同梱しています。`<host>.gif` を `~/.agent-glance/gifs/hosts/` に置くことで上書きできます(例: `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`) — ユーザーファイルが同梱ファイルより優先されます。
 
 ### GIF 最適規格および推奨仕様
 

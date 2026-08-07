@@ -137,7 +137,7 @@ Pick a preset with the `--preset` CLI flag (it persists to `config.json`, like `
 python3 scripts/agent_glance.py --preset hosts
 ```
 
-`hosts` ships with neutral placeholders in `assets/hosts/` so it works immediately. To use your own character, drop a GIF into the user directory — it takes precedence over the bundled one, and the screen updates on the next state push (no restart):
+`hosts` ships with neutral placeholders in `assets/gif/` so it works immediately. To use your own character, drop a GIF into the user directory — it takes precedence over the bundled one, and the screen updates on the next state push (no restart):
 
 ```bash
 mkdir -p ~/.agent-glance/gifs/hosts
