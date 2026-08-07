@@ -140,6 +140,17 @@ python3 scripts/agent_glance.py --preset hosts
 
 `hosts` 在 `assets/hosts/` 中隨附中性的預留素材;覆蓋方式為將 `<host>.gif` 放進 `~/.agent-glance/gifs/hosts/`(例如 `claude-code.gif`、`codex.gif`、`antigravity.gif`、`hermes.gif`、`agent.gif`)—— 使用者檔案優先於隨附素材。
 
+### GIF 最佳規格與推薦參數
+
+| 參數 | `frame` 佈局 | `fullscreen` 佈局 |
+|---|---|---|
+| **最佳解析度** | **224 × 116 px** (長寬比約 1.93:1) 或 **116 × 116 px** (1:1 正方形) | **240 × 240 px** (1:1 正方形) |
+| **合成目標區域** | 自動適應內嵌於 `MIDDLE_BOX = (8, 46, 224, 116)` | 覆蓋 1.54 吋 SmallTV 整個螢幕 |
+| **推薦檔案大小** | **100 KB – 300 KB** (最大 < 500 KB，以防止 ESP8266 RAM/OOM 崩潰) |
+| **影格數** | **12 – 16 影格** (超出部分算色器將自動抽幀降採樣至 `_MAX_FRAMES = 16`) |
+| **影格延遲** | **80ms – 150ms** / 影格 (1.2秒 – 2.0秒循環) |
+| **調色板** | **64 – 128 色** (優化算色速度與 Flash 快閃記憶體壽命) |
+
 `custom` 會從 `config.json` 讀取 `display.gifs`;每個 host 條目可為路徑字串(所有狀態共用一張 GIF)或按狀態的對應表;`"default"` 為後備;任何條目都可為 `{"path":...,"layout":"fullscreen"}`。
 
 ```json

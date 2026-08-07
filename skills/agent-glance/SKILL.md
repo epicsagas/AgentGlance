@@ -125,9 +125,13 @@ Beyond the static status frame, gif mode composites a **looping animated GIF** (
 ```bash
 # bundled neutral per-host character placeholders (work out of the box):
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --preset hosts
+```
 
-# override one host by dropping a file in the user dir (wins over bundled):
-#   ~/.agent-glance/gifs/hosts/claude-code.gif
+To replace a character with the user's own GIF (wins over bundled; updates on the next push, no restart), drop it in the user dir named for the host — `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, or `agent.gif` for any other host:
+
+```bash
+mkdir -p ~/.agent-glance/gifs/hosts
+cp my-character.gif ~/.agent-glance/gifs/hosts/claude-code.gif
 ```
 
 `anime` is a reserved slot (art TBD; falls back to the hosts character). `custom` lets the user map their own GIFs per host and per state in `~/.agent-glance/config.json`:
@@ -139,6 +143,18 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --preset hosts
 ```
 
 A missing or unreadable GIF falls back to the static frame — the screen never blanks. See the repo README for the full resolution order.
+
+### Optimal GIF Specifications
+
+| Parameter | Frame Layout | Fullscreen Layout |
+|---|---|---|
+| **Optimal Resolution** | **224 × 116 px** (1.93:1) or **116 × 116 px** (1:1) | **240 × 240 px** (1:1) |
+| **Middle Box Target** | `(8, 46, 224, 116)` | Covers full screen |
+| **Recommended File Size** | **100 KB – 300 KB** (Hard max < 500 KB to prevent ESP8266 OOM/403) |
+| **Frame Count** | **12 – 16 frames** (Script downsamples exceeding frames to `_MAX_FRAMES = 16`) |
+| **Frame Delay** | **80ms – 150ms** per frame (1.2s – 2.0s loop) |
+| **Colors** | **64 – 128 colors** |
+
 
 ## Verified device API (SD_RU / SD Pro)
 

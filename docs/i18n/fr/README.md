@@ -138,7 +138,34 @@ Choisissez un preset avec le flag CLI `--preset` (il persiste dans `config.json`
 python3 scripts/agent_glance.py --preset hosts
 ```
 
-`hosts` est livré avec des placeholders neutres dans `assets/hosts/`. Pour remplacer l'un d'eux, déposez un `<host>.gif` dans `~/.agent-glance/gifs/hosts/` (par ex. `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`) — le fichier utilisateur l'emporte sur celui fourni.
+`hosts` est livré avec des placeholders neutres dans `assets/hosts/` afin de fonctionner immédiatement. Pour utiliser votre propre personnage, déposez un GIF dans le répertoire utilisateur — il prend le pas sur celui fourni, et l'écran se met à jour au prochain envoi d'état (pas de redémarrage) :
+
+```bash
+mkdir -p ~/.agent-glance/gifs/hosts
+cp my-character.gif ~/.agent-glance/gifs/hosts/claude-code.gif
+```
+
+Nommez le fichier d'après l'hôte qu'il doit remplacer (minuscules, espaces → tirets) :
+
+| Hôte détecté | Fichier de remplacement |
+|---|---|
+| Claude Code | `claude-code.gif` |
+| Codex | `codex.gif` |
+| Antigravity | `antigravity.gif` |
+| Hermes | `hermes.gif` |
+| tout autre hôte | `agent.gif` |
+
+### Spécifications GIF optimales
+
+| Paramètre | Mise en page `frame` | Mise en page `fullscreen` |
+|---|---|---|
+| **Résolution optimale** | **224 × 116 px** (~1,93:1) ou **116 × 116 px** (1:1) | **240 × 240 px** (carré 1:1) |
+| **Cible de composition** | S'insère dans `MIDDLE_BOX = (8, 46, 224, 116)` | Couvre tout l'écran 1.54" du SmallTV |
+| **Taille de fichier recommandée** | **100 KB – 300 KB** (Max < 500 KB pour éviter les plantages RAM/OOM ESP8266) |
+| **Nombre d'images** | **12 – 16 images** (le moteur de rendu sous-échantillonne au-delà de `_MAX_FRAMES = 16`) |
+| **Délai d'image** | **80ms – 150ms** par image (boucle de 1.2s – 2.0s) |
+| **Palette de couleurs** | **64 – 128 couleurs** (optimise la vitesse de rendu et l'usure de la mémoire Flash) |
+
 
 `custom` lit `display.gifs` dans `config.json`. Chaque entrée d'hôte est soit une chaîne de chemin (un seul GIF pour tous les états), soit une map par état ; `"default"` est le fallback. Chaque entrée peut aussi être `{"path": ..., "layout": "fullscreen"}` pour passer en plein écran sur celle-là :
 

@@ -138,7 +138,34 @@ Wähle ein Preset mit dem CLI-Flag `--preset` (wird wie `--ip` in `config.json` 
 python3 scripts/agent_glance.py --preset hosts
 ```
 
-`hosts` wird mit neutralen Platzhaltern in `assets/hosts/` ausgeliefert. Überschreibe einen Platzhalter, indem du eine `<host>.gif` in `~/.agent-glance/gifs/hosts/` ablegst (z. B. `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`) — die Benutzerdatei hat Vorrang vor der mitgelieferten.
+`hosts` wird mit neutralen Platzhaltern in `assets/hosts/` ausgeliefert, sodass es sofort einsatzbereit ist. Um deinen eigenen Charakter zu verwenden, lege eine GIF im Benutzerverzeichnis ab — sie hat Vorrang vor der mitgelieferten, und der Bildschirm wird beim nächsten Status-Push aktualisiert (kein Neustart nötig):
+
+```bash
+mkdir -p ~/.agent-glance/gifs/hosts
+cp my-character.gif ~/.agent-glance/gifs/hosts/claude-code.gif
+```
+
+Benenne die Datei nach dem Host, den sie ersetzen soll (Kleinschreibung, Leerzeichen → Bindestriche):
+
+| Erkannter Host | Dateiname zum Überschreiben |
+|---|---|
+| Claude Code | `claude-code.gif` |
+| Codex | `codex.gif` |
+| Antigravity | `antigravity.gif` |
+| Hermes | `hermes.gif` |
+| jeder andere Host | `agent.gif` |
+
+### Optimale GIF-Spezifikationen
+
+| Parameter | `frame`-Layout | `fullscreen`-Layout |
+|---|---|---|
+| **Optimale Auflösung** | **224 × 116 px** (~1,93:1) oder **116 × 116 px** (1:1) | **240 × 240 px** (1:1 quadratisch) |
+| **Zielbereich** | Passt in `MIDDLE_BOX = (8, 46, 224, 116)` | Deckt den gesamten 1,54" SmallTV-Bildschirm ab |
+| **Empfohlene Dateigröße** | **100 KB – 300 KB** (Max < 500 KB zur Vermeidung von ESP8266 RAM/OOM-Abstürzen) |
+| **Frame-Anzahl** | **12 – 16 Frames** (Renderer reduziert über absolute Werte hinaus auf `_MAX_FRAMES = 16`) |
+| **Frame-Verzögerung** | **80ms – 150ms** pro Frame (1,2s – 2,0s Schleife) |
+| **Farbpalette** | **64 – 128 Farben** (optimiert Rendering-Geschwindigkeit und Flash-Verschleiß) |
+
 
 `custom` liest `display.gifs` aus `config.json`. Jeder Host-Eintrag ist entweder ein Pfad-String (ein GIF für alle Status) oder eine pro-Status-Map; `"default"` ist der Fallback. Jeder Eintrag kann auch als `{"path": ..., "layout": "fullscreen"}` angegeben werden, um nur für diesen auf Full-Screen zu schalten:
 

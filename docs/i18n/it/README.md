@@ -138,7 +138,34 @@ Scegli un preset con il flag CLI `--preset` (viene salvato in `config.json`, com
 python3 scripts/agent_glance.py --preset hosts
 ```
 
-`hosts` viene fornito con segnaposto neutri in `assets/hosts/`. Sovrascrilineo uno inserendo un file `<host>.gif` in `~/.agent-glance/gifs/hosts/` (ad es. `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`) — il file dell'utente ha la precedenza su quello in bundle.
+`hosts` viene fornito con segnaposto neutri in `assets/hosts/`, così funziona fin da subito. Per usare un tuo personaggio, inserisci una GIF nella directory utente — ha la precedenza su quella in bundle, e lo schermo si aggiorna al prossimo push di stato (nessun riavvio):
+
+```bash
+mkdir -p ~/.agent-glance/gifs/hosts
+cp my-character.gif ~/.agent-glance/gifs/hosts/claude-code.gif
+```
+
+Dai al file il nome dell'host che deve sostituire (minuscolo, spazi → trattini):
+
+| Host rilevato | File di override |
+|---|---|
+| Claude Code | `claude-code.gif` |
+| Codex | `codex.gif` |
+| Antigravity | `antigravity.gif` |
+| Hermes | `hermes.gif` |
+| qualsiasi altro host | `agent.gif` |
+
+### Specifiche GIF ottimali
+
+| Parametro | Layout `frame` | Layout `fullscreen` |
+|---|---|---|
+| **Risoluzione ottimale** | **224 × 116 px** (~1.93:1) o **116 × 116 px** (1:1) | **240 × 240 px** (1:1 quadrato) |
+| **Obiettivo di composizione** | Si adatta a `MIDDLE_BOX = (8, 46, 224, 116)` | Copre l'intero schermo SmallTV da 1.54" |
+| **Dimensione file consigliata** | **100 KB – 300 KB** (Max < 500 KB per evitare crash RAM/OOM ESP8266) |
+| **Numero di fotogrammi** | **12 – 16 fotogrammi** (il renderer riduce i fotogrammi in eccesso a `_MAX_FRAMES = 16`) |
+| **Ritardo fotogramma** | **80ms – 150ms** per fotogramma (loop da 1.2s – 2.0s) |
+| **Tavolozza colori** | **64 – 128 colori** (ottimizza la velocità di rendering e l'usura della Flash) |
+
 
 `custom` legge `display.gifs` da `config.json`. Ogni voce host è una stringa di percorso (una GIF per tutti gli stati) oppure una mappa per stato; `"default"` è il fallback. Qualsiasi voce può anche essere `{"path": ..., "layout": "fullscreen"}` per andare a schermo intero per quella:
 

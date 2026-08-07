@@ -140,6 +140,17 @@ python3 scripts/agent_glance.py --preset hosts
 
 `hosts` 在 `assets/hosts/` 中附带中性的占位图。把 `<host>.gif` 放到 `~/.agent-glance/gifs/hosts/` 即可覆盖某一个(例如 `claude-code.gif`、`codex.gif`、`antigravity.gif`、`hermes.gif`、`agent.gif`) —— 用户文件优先于自带文件。
 
+### GIF 最佳规格与推荐参数
+
+| 参数 | `frame` 布局 | `fullscreen` 布局 |
+|---|---|---|
+| **最佳分辨率** | **224 × 116 px** (宽高比约 1.93:1) 或 **116 × 116 px** (1:1 正方形) | **240 × 240 px** (1:1 正方形) |
+| **合成目标区域** | 自动适应内嵌于 `MIDDLE_BOX = (8, 46, 224, 116)` | 覆盖 1.54 英寸 SmallTV 整个屏幕 |
+| **推荐文件大小** | **100 KB – 300 KB** (最大 < 500 KB，以防止 ESP8266 RAM/OOM 崩溃) |
+| **帧数** | **12 – 16 帧** (超出部分渲染器将自动抽帧降采样至 `_MAX_FRAMES = 16`) |
+| **帧延迟** | **80ms – 150ms** / 帧 (1.2秒 – 2.0秒循环) |
+| **调色板** | **64 – 128 色** (优化渲染速度与 Flash 闪存寿命) |
+
 `custom` 会读取 `config.json` 中的 `display.gifs`。每个 host 条目要么是一个路径字符串(所有状态共用同一张 GIF),要么是一张按状态映射的表;`"default"` 是回退项。任何条目也可以写成 `{"path": ..., "layout": "fullscreen"}`,让该条目单独以全屏方式显示:
 
 ```json

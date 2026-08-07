@@ -140,6 +140,17 @@ python3 scripts/agent_glance.py --preset hosts
 
 `hosts` viene con marcadores de posición neutrales en `assets/hosts/`. Sobrescribe uno colocando un `<host>.gif` en `~/.agent-glance/gifs/hosts/` (p. ej. `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`) — el archivo del usuario prevalece sobre el incluido.
 
+### Especificaciones óptimas de GIF
+
+| Parámetro | Diseño `frame` | Diseño `fullscreen` |
+|---|---|---|
+| **Resolución óptima** | **224 × 116 px** (~1.93:1) o **116 × 116 px** (1:1) | **240 × 240 px** (cuadrado 1:1) |
+| **Objetivo de composición** | Se ajusta dentro de `MIDDLE_BOX = (8, 46, 224, 116)` | Cubre toda la pantalla de 1.54" de SmallTV |
+| **Tamaño de archivo recomendado** | **100 KB – 300 KB** (Máx < 500 KB para evitar fallos de RAM/OOM en ESP8266) |
+| **Número de fotogramas** | **12 – 16 fotogramas** (el renderizador reduce los fotogramas excedentes a `_MAX_FRAMES = 16`) |
+| **Retraso de fotograma** | **80ms – 150ms** por fotograma (bucle de 1.2s – 2.0s) |
+| **Paleta de colores** | **64 – 128 colores** (optimiza la velocidad de renderizado y el desgaste de Flash) |
+
 `custom` lee `display.gifs` de `config.json`. Cada entrada de host es una cadena de ruta (un mismo GIF para todos los estados) o un mapa por estado; `"default"` es el fallback. Cualquier entrada puede ser también `{"path": ..., "layout": "fullscreen"}` para esa entrada concreta a pantalla completa:
 
 ```json

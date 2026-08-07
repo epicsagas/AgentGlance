@@ -135,7 +135,34 @@ Pick a preset with the `--preset` CLI flag (it persists to `config.json`, like `
 python3 scripts/agent_glance.py --preset hosts
 ```
 
-`hosts` ships with neutral placeholders in `assets/hosts/`. Override one by dropping a `<host>.gif` into `~/.agent-glance/gifs/hosts/` (e.g. `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`) — the user file wins over the bundled one.
+`hosts` ships with neutral placeholders in `assets/hosts/` so it works immediately. To use your own character, drop a GIF into the user directory — it takes precedence over the bundled one, and the screen updates on the next state push (no restart):
+
+```bash
+mkdir -p ~/.agent-glance/gifs/hosts
+cp my-character.gif ~/.agent-glance/gifs/hosts/claude-code.gif
+```
+
+Name the file after the host it should replace (lowercase, spaces → hyphens):
+
+| Detected host | Override filename |
+|---|---|
+| Claude Code | `claude-code.gif` |
+| Codex | `codex.gif` |
+| Antigravity | `antigravity.gif` |
+| Hermes | `hermes.gif` |
+| any other host | `agent.gif` |
+
+### Optimal GIF Specifications
+
+| Parameter | `frame` Layout | `fullscreen` Layout |
+|---|---|---|
+| **Optimal Resolution** | **224 × 116 px** (~1.93:1) or **116 × 116 px** (1:1) | **240 × 240 px** (1:1 square) |
+| **Composite Target** | Fits inside `MIDDLE_BOX = (8, 46, 224, 116)` | Covers entire 1.54" SmallTV screen |
+| **Recommended File Size** | **100 KB – 300 KB** (Hard max < 500 KB to avoid ESP8266 RAM/OOM crashes) |
+| **Frame Count** | **12 – 16 frames** (Script downsamples exceeding frames to `_MAX_FRAMES = 16`) |
+| **Frame Delay** | **80ms – 150ms** per frame (1.2s – 2.0s loop) |
+| **Color Palette** | **64 – 128 colors** (optimizes rendering speed & Flash wear) |
+
 
 `custom` reads `display.gifs` from `config.json`. Each host entry is either a path string (one GIF for all states) or a per-state map; `"default"` is the fallback. Any entry can also be `{"path": ..., "layout": "fullscreen"}` to go full-screen for that one:
 

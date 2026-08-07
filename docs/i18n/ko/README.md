@@ -138,7 +138,34 @@ python3 <plugin>/scripts/agent_glance.py --setup
 python3 scripts/agent_glance.py --preset hosts
 ```
 
-`hosts`는 `assets/hosts/`에 중립 플레이스홀더를 기본으로 제공합니다. 덮어쓰려면 `<host>.gif` 파일을 `~/.agent-glance/gifs/hosts/`에 넣으세요 (예: `claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, `agent.gif`). 사용자 파일이 번들 파일보다 우선합니다.
+`hosts`는 `assets/hosts/`에 중립 플레이스홀더를 기본 제공하므로 바로 동작합니다. 직접 캐릭터를 쓰려면 GIF 파일을 사용자 디렉터리에 넣으세요 — 번들 파일보다 우선 적용되며, 다음 상태 푸시 때 화면에 반영됩니다 (재시작 불필요):
+
+```bash
+mkdir -p ~/.agent-glance/gifs/hosts
+cp 내캐릭터.gif ~/.agent-glance/gifs/hosts/claude-code.gif
+```
+
+파일명은 바꿀 호스트 이름으로 (소문자, 공백 → 하이픈):
+
+| 감지된 호스트 | 오버라이드 파일명 |
+|---|---|
+| Claude Code | `claude-code.gif` |
+| Codex | `codex.gif` |
+| Antigravity | `antigravity.gif` |
+| Hermes | `hermes.gif` |
+| 그 외 호스트 | `agent.gif` |
+
+### GIF 최적 규격 및 권장 사양
+
+| 항목 | `frame` 레이아웃 | `fullscreen` 레이아웃 |
+|---|---|---|
+| **최적 해상도** | **224 × 116 px** (비율 ~1.93:1) 또는 **116 × 116 px** (1:1) | **240 × 240 px** (1:1 정사각형) |
+| **합성 영역** | `MIDDLE_BOX = (8, 46, 224, 116)` 내부 맞춤 | SmallTV 1.54인치 전체 화면 덮음 |
+| **권장 파일 용량** | **100 KB – 300 KB** (ESP8266 RAM/OOM 방지를 위해 최대 500 KB 미만) |
+| **프레임 수** | **12 – 16 프레임** (렌더러에서 `_MAX_FRAMES = 16`으로 자동 다운샘플링) |
+| **프레임 딜레이** | **80ms – 150ms** / 프레임당 (1.2초 – 2.0초 루프) |
+| **색상 팔레트** | **64 – 128 Colors** (렌더링 속도 최적화 및 플래시 메모리 보호) |
+
 
 `custom`은 `config.json`의 `display.gifs`를 읽습니다. 각 호스트 항목은 경로 문자열(모든 상태에同一 GIF)이거나 상태별 맵이며, `"default"`는 폴백입니다. 각 항목은 `{"path": ..., "layout": "fullscreen"}` 형태로 해당 항목만 전체화면으로 지정할 수도 있습니다:
 

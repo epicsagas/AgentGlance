@@ -100,7 +100,16 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --preset hosts
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --test working "gif preview"
 ```
 
-`hosts` ships with neutral per-host placeholders that work immediately; override
-one by dropping `<host>.gif` (e.g. `claude-code.gif`) into
-`~/.agent-glance/gifs/hosts/`. `custom` maps your own GIFs per host/state in
-`config.json`. See the repo README ("GIF mode & presets") for the full schema.
+`hosts` ships with neutral per-host placeholders that work immediately. To use
+the user's own character, drop a GIF into the user dir (wins over bundled;
+updates on the next push, no restart). Name it for the host it replaces —
+`claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, or `agent.gif`
+for any other host:
+
+```bash
+mkdir -p ~/.agent-glance/gifs/hosts
+cp my-character.gif ~/.agent-glance/gifs/hosts/claude-code.gif
+```
+
+`custom` maps your own GIFs per host/state in `config.json`. See the repo README
+("GIF mode & presets") for the full schema.
