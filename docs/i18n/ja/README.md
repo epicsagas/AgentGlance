@@ -118,7 +118,7 @@ python3 <plugin>/scripts/agent_glance.py --setup
 |---|---|---|
 | `AGENT_GLANCE_IP` | デバイス IP — **必須** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | パーセントバーのスケールに使うコンテキストウィンドウサイズ | `200000` |
-| `AGENT_GLANCE_PRESET` | 表示プリセット: `default` \| `hosts` \| `anime` \| `custom` | `default` |
+| `AGENT_GLANCE_PRESET` | 表示プリセット: `default` \| `hosts` \| `custom` | `hosts` |
 | `AGENT_GLANCE_LAYOUT` | gif モードのレイアウト: `frame` \| `fullscreen` | `frame` |
 
 ### GIF モードとプリセット
@@ -129,7 +129,6 @@ python3 <plugin>/scripts/agent_glance.py --setup
 |---|---|
 | `default` | 静的フレーム(従来の挙動) |
 | `hosts` | 同梱のホスト別キャラクター GIF を中央に表示、ヘッダーとフッターは維持 |
-| `anime` | *予約済み* — スロットのみ存在、アートは未定。hosts のキャラクターにフォールバック |
 | `custom` | ユーザー独自の GIF、ホスト別/状態別マッピング(スキーマ参照) |
 
 プリセットは `--preset` CLI フラグで選択します(`--ip` と同じく `config.json` に保存されます):
@@ -209,7 +208,7 @@ ffmpeg -framerate 10 -i frames/f_%03d.png \
 | フラグ | 動作 |
 |---|---|
 | `--ip <IP>` | デバイス IP を保存 |
-| `--preset default\|hosts\|anime\|custom` | 表示モードを切り替え([GIF モード](#gif-モードとプリセット)参照) |
+| `--preset default\|hosts\|custom` | 表示モードを切り替え([GIF モード](#gif-モードとプリセット)参照) |
 | `--layout frame\|fullscreen` | gif モードのレイアウト(`frame` はヘッダー+フッターを維持、`fullscreen` は GIF のみ) |
 | `--test [state] [subtitle]` | フレームをプッシュ、現在のプリセットに従うため gif モードのプレビューにも使えます |
 

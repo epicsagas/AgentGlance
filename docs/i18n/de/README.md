@@ -118,7 +118,7 @@ Die Konfiguration wird **zuerst über Umgebungsvariablen** gelesen und fällt so
 |---|---|---|
 | `AGENT_GLANCE_IP` | Geräte-IP — **erforderlich** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | Kontextfenster zur Skalierung der %-Anzeige | `200000` |
-| `AGENT_GLANCE_PRESET` | Anzeigepreset: `default` \| `hosts` \| `anime` \| `custom` | `default` |
+| `AGENT_GLANCE_PRESET` | Anzeigepreset: `default` \| `hosts` \| `custom` | `hosts` |
 | `AGENT_GLANCE_LAYOUT` | GIF-Modus-Layout: `frame` \| `fullscreen` | `frame` |
 
 ### GIF-Modus & Presets
@@ -129,7 +129,6 @@ Der Standardmodus ist das oben beschriebene statische Status-Frame. Wähle ein a
 |---|---|
 | `default` | Statisches Frame (ursprüngliches Verhalten) |
 | `hosts` | Ein mitgeliefertes pro-Host-Charakter-GIF in der Mitte; Header + Footer bleiben erhalten |
-| `anime` | *Reserviert* — Slot existiert, Art folgt. Fällt auf den hosts-Charakter zurück |
 | `custom` | Eigene GIFs, pro Host und/oder pro Status (siehe Schema) |
 
 Wähle ein Preset mit dem CLI-Flag `--preset` (wird wie `--ip` in `config.json` gespeichert):
@@ -225,7 +224,7 @@ Einige Optionen gibt es **nur als CLI-Flag** (kein Slash-Command) — sie werden
 | Flag | What it does |
 |---|---|
 | `--ip <IP>` | Geräte-IP speichern |
-| `--preset default\|hosts\|anime\|custom` | Anzeigemodus wechseln (siehe [GIF-Modus](#gif-modus--presets)) |
+| `--preset default\|hosts\|custom` | Anzeigemodus wechseln (siehe [GIF-Modus](#gif-modus--presets)) |
 | `--layout frame\|fullscreen` | GIF-Modus-Layout (`frame` behält Header+Footer; `fullscreen` ist nur das GIF) |
 | `--test [state] [subtitle]` | Ein Frame pushen; respektiert das aktuelle Preset, zeigt also auch eine Vorschau des GIF-Modus |
 

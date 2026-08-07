@@ -118,7 +118,7 @@ python3 <plugin>/scripts/agent_glance.py --setup
 |---|---|---|
 | `AGENT_GLANCE_IP` | 设备 IP —— **必填** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | 用于缩放百分比条的上下文窗口大小 | `200000` |
-| `AGENT_GLANCE_PRESET` | 显示预设：`default` \| `hosts` \| `anime` \| `custom` | `default` |
+| `AGENT_GLANCE_PRESET` | 显示预设：`default` \| `hosts` \| `custom` | `hosts` |
 | `AGENT_GLANCE_LAYOUT` | gif 模式布局：`frame` \| `fullscreen` | `frame` |
 
 ### GIF 模式与预设
@@ -129,7 +129,6 @@ python3 <plugin>/scripts/agent_glance.py --setup
 |---|---|
 | `default` | 静态帧(原有行为) |
 | `hosts` | 中间显示自带的按宿主区分的角色 GIF,header + footer 保留 |
-| `anime` | *预留* —— 槽位已留出,美术待定。回退到 hosts 的角色 |
 | `custom` | 你自己的 GIF,可按宿主和/或按状态映射(见 schema) |
 
 用 `--preset` CLI 标志选择预设(与 `--ip` 一样会持久化到 `config.json`):
@@ -209,7 +208,7 @@ ffmpeg -framerate 10 -i frames/f_%03d.png \
 | 标志 | 作用 |
 |---|---|
 | `--ip <IP>` | 保存设备 IP |
-| `--preset default\|hosts\|anime\|custom` | 切换显示模式(见 [GIF 模式](#gif-模式与预设)) |
+| `--preset default\|hosts\|custom` | 切换显示模式(见 [GIF 模式](#gif-模式与预设)) |
 | `--layout frame\|fullscreen` | gif 模式布局(`frame` 保留 header+footer;`fullscreen` 仅显示 GIF) |
 | `--test [state] [subtitle]` | 推送一帧;遵循当前预设,因此也可用于预览 gif 模式 |
 

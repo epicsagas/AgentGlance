@@ -115,7 +115,7 @@ first prompt after enabling animates the display.
 | `--restore` | Revert device to the pre-setup themes/photos |
 | `--test working\|waiting\|done [subtitle]` | Manual push (uses newest local transcript for metrics; respects the current preset, so it previews gif mode) |
 | `--ip <IP>` | Save IP to `~/.agent-glance/config.json` (alternative to the env var) |
-| `--preset default\|hosts\|anime\|custom` | Switch display mode (`default` = static frame; others = animated gif mode) |
+| `--preset default\|hosts\|custom` | Switch display mode (`default` = static frame; others = animated gif mode) |
 | `--layout frame\|fullscreen` | gif-mode layout: `frame` keeps header+footer; `fullscreen` is the GIF only |
 
 ## GIF mode (optional)
@@ -134,7 +134,7 @@ mkdir -p ~/.agent-glance/gifs/hosts
 cp my-character.gif ~/.agent-glance/gifs/hosts/claude-code.gif
 ```
 
-`anime` is a reserved slot (art TBD; falls back to the hosts character). `custom` lets the user map their own GIFs per host and per state in `~/.agent-glance/config.json`:
+`custom` lets the user map their own GIFs per host and per state in `~/.agent-glance/config.json`:
 
 ```json
 "display": { "preset": "custom", "layout": "frame",

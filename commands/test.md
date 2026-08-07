@@ -42,7 +42,7 @@ done
 Expected: amber WORKING, red APPROVAL, green DONE — each with the model name, a
 context-usage bar, and in/out token counts along the bottom.
 
-`--test` respects the current preset: in gif mode (`--preset hosts`/`anime`/`custom`)
+`--test` respects the current preset: in gif mode (`--preset hosts`/`custom`)
 the middle of the frame is the looping character GIF instead of the status text,
 and the device animates it. State still shows via the top accent bar + background
 colour. If gif mode is on but no character resolves, it falls back to the static

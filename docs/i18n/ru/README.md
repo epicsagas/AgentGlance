@@ -118,7 +118,7 @@ python3 <plugin>/scripts/agent_glance.py --setup
 |---|---|---|
 | `AGENT_GLANCE_IP` | IP устройства — **обязательно** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | контекстное окно, используемое для масштабирования шкалы % | `200000` |
-| `AGENT_GLANCE_PRESET` | пресет отображения: `default` \| `hosts` \| `anime` \| `custom` | `default` |
+| `AGENT_GLANCE_PRESET` | пресет отображения: `default` \| `hosts` \| `custom` | `hosts` |
 | `AGENT_GLANCE_LAYOUT` | макет режима gif: `frame` \| `fullscreen` | `frame` |
 
 ### Режим GIF и пресеты
@@ -129,7 +129,6 @@ python3 <plugin>/scripts/agent_glance.py --setup
 |---|---|
 | `default` | Статический кадр (исходное поведение) |
 | `hosts` | Встроенный GIF-персонаж для каждого хоста в центре; шапка и колонтитул сохраняются |
-| `anime` | *Зарезервировано* — слот существует, арт TBD; откатывается на персонажа hosts |
 | `custom` | Ваши собственные GIF, по хосту и/или по состоянию (см. схему) |
 
 Пресет выбирается через CLI-флаг `--preset` (сохраняется в `config.json`, как `--ip`):
@@ -209,7 +208,7 @@ ffmpeg -framerate 10 -i frames/f_%03d.png \
 | Flag | What it does |
 |---|---|
 | `--ip <IP>` | сохранить IP устройства |
-| `--preset default\|hosts\|anime\|custom` | переключить режим отображения (см. [режим GIF](#режим-gif-и-пресеты)) |
+| `--preset default\|hosts\|custom` | переключить режим отображения (см. [режим GIF](#режим-gif-и-пресеты)) |
 | `--layout frame\|fullscreen` | макет режима gif (`frame` сохраняет шапку+колонтитул; `fullscreen` — только GIF) |
 | `--test [state] [subtitle]` | отправить кадр; учитывает текущий пресет, так что предварительно показывает и режим gif |
 

@@ -118,7 +118,7 @@ python3 <plugin>/scripts/agent_glance.py --setup
 |---|---|---|
 | `AGENT_GLANCE_IP` | 裝置 IP —— **必填** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | 用於縮放百分比條的上下文視窗大小 | `200000` |
-| `AGENT_GLANCE_PRESET` | 顯示預設:`default` | `hosts` | `anime` | `custom` | `default` |
+| `AGENT_GLANCE_PRESET` | 顯示預設:`default` | `hosts` | `custom` | `hosts` |
 | `AGENT_GLANCE_LAYOUT` | gif 模式版面:`frame` | `fullscreen` | `frame` |
 
 ### GIF 模式與預設
@@ -129,7 +129,6 @@ python3 <plugin>/scripts/agent_glance.py --setup
 |---|---|
 | `default` | 靜態畫面(原始行為) |
 | `hosts` | 中央播放隨附的各主機角色 GIF,保留頁首與頁尾 |
-| `anime` | 保留,欄位已存在,美術待定,會退回 hosts 角色 |
 | `custom` | 你自備的 GIF,可按主機和/或按狀態指定(詳見 schema) |
 
 ```
@@ -209,7 +208,7 @@ ffmpeg -framerate 10 -i frames/f_%03d.png \
 | Flag | 功能 |
 |---|---|
 | `--ip <IP>` | 儲存裝置 IP |
-| `--preset default\|hosts\|anime\|custom` | 切換顯示模式(詳見 [GIF 模式](#gif-模式與預設)) |
+| `--preset default\|hosts\|custom` | 切換顯示模式(詳見 [GIF 模式](#gif-模式與預設)) |
 | `--layout frame\|fullscreen` | gif 模式版面(frame 保留頁首與頁尾;fullscreen 僅顯示 GIF) |
 | `--test [state] [subtitle]` | 推送一幀;遵循目前預設,因此可預覽 gif 模式 |
 

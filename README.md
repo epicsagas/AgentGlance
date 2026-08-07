@@ -115,7 +115,7 @@ Config is read **env-var first**, falling back to `~/.agent-glance/config.json` 
 |---|---|---|
 | `AGENT_GLANCE_IP` | device IP — **required** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | context window used to scale the % bar | `200000` |
-| `AGENT_GLANCE_PRESET` | display preset: `default` \| `hosts` \| `anime` \| `custom` | `default` |
+| `AGENT_GLANCE_PRESET` | display preset: `default` \| `hosts` \| `custom` | `hosts` |
 | `AGENT_GLANCE_LAYOUT` | gif-mode layout: `frame` \| `fullscreen` | `frame` |
 
 ### GIF mode & presets
@@ -126,7 +126,6 @@ The default mode is the static status frame described above. Set a different pre
 |---|---|
 | `default` | Static frame (the original behaviour) |
 | `hosts` | A bundled per-host character GIF in the middle; header + footer kept |
-| `anime` | *Reserved* — slot exists; art TBD. Falls back to the hosts character |
 | `custom` | Your own GIFs, per host and/or per state (see schema) |
 
 Pick a preset with the `--preset` CLI flag (it persists to `config.json`, like `--ip`):
@@ -220,7 +219,7 @@ A few options are **CLI flags only** (no slash command) — they persist to `~/.
 | Flag | What it does |
 |---|---|
 | `--ip <IP>` | save the device IP |
-| `--preset default\|hosts\|anime\|custom` | switch display mode (see [GIF mode](#gif-mode--presets)) |
+| `--preset default\|hosts\|custom` | switch display mode (see [GIF mode](#gif-mode--presets)) |
 | `--layout frame\|fullscreen` | gif-mode layout (frame keeps header+footer; fullscreen is the GIF only) |
 | `--test [state] [subtitle]` | push a frame; respects the current preset, so it previews gif mode too |
 

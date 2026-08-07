@@ -118,7 +118,7 @@ python3 <plugin>/scripts/agent_glance.py --setup
 |---|---|---|
 | `AGENT_GLANCE_IP` | 기기 IP — **필수** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | 퍼센트 바 스케일링에 쓰이는 컨텍스트 윈도우 크기 | `200000` |
-| `AGENT_GLANCE_PRESET` | 화면 프리셋: `default` \| `hosts` \| `anime` \| `custom` | `default` |
+| `AGENT_GLANCE_PRESET` | 화면 프리셋: `default` \| `hosts` \| `custom` | `hosts` |
 | `AGENT_GLANCE_LAYOUT` | gif 모드 레이아웃: `frame` \| `fullscreen` | `frame` |
 
 ### GIF 모드와 프리셋
@@ -129,7 +129,6 @@ python3 <plugin>/scripts/agent_glance.py --setup
 |---|---|
 | `default` | 정적 프레임 (기존 동작) |
 | `hosts` | 번들된 호스트별 캐릭터 GIF를 중간에 표시, 헤더·푸터 유지 |
-| `anime` | *예약* — 슬롯만 있고 아트는 미정. hosts 캐릭터로 폴백 |
 | `custom` | 사용자 지정 GIF, 호스트별/상태별 매핑 (스키마 참고) |
 
 프리셋은 `--preset` CLI 플래그로 선택합니다 (`--ip`처럼 `config.json`에 저장됨):
@@ -225,7 +224,7 @@ ffmpeg -framerate 10 -i frames/f_%03d.png \
 | 플래그 | 동작 |
 |---|---|
 | `--ip <IP>` | 기기 IP 저장 |
-| `--preset default\|hosts\|anime\|custom` | 화면 모드 전환 ([GIF 모드](#gif-모드와-프리셋) 참고) |
+| `--preset default\|hosts\|custom` | 화면 모드 전환 ([GIF 모드](#gif-모드와-프리셋) 참고) |
 | `--layout frame\|fullscreen` | gif 모드 레이아웃 (`frame`은 헤더+푸터 유지, `fullscreen`은 GIF만) |
 | `--test [state] [subtitle]` | 프레임 전송, 현재 프리셋을 따르므로 gif 모드 미리보기에도 쓰임 |
 

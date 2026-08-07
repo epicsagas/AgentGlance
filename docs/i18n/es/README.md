@@ -118,7 +118,7 @@ La configuración se lee **primero desde variables de entorno**, y si no existen
 |---|---|---|
 | `AGENT_GLANCE_IP` | IP del dispositivo — **obligatorio** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | ventana de contexto usada para escalar la barra de % | `200000` |
-| `AGENT_GLANCE_PRESET` | preset de visualización: `default` \| `hosts` \| `anime` \| `custom` | `default` |
+| `AGENT_GLANCE_PRESET` | preset de visualización: `default` \| `hosts` \| `custom` | `hosts` |
 | `AGENT_GLANCE_LAYOUT` | diseño del modo gif: `frame` \| `fullscreen` | `frame` |
 
 ### Modo GIF y presets
@@ -129,7 +129,6 @@ El modo predeterminado es el fotograma de estado estático descrito más arriba.
 |---|---|
 | `default` | Fotograma estático (el comportamiento original) |
 | `hosts` | Un GIF de personaje por host incluido, en el centro; cabecera + pie conservados |
-| `anime` | *Reservado* — el hueco existe; arte por decidir. Recurre al personaje de hosts |
 | `custom` | Tus propios GIFs, por host y/o por estado (ver esquema) |
 
 Elige un preset con el flag CLI `--preset` (se guarda en `config.json`, como `--ip`):
@@ -209,7 +208,7 @@ Algunas opciones son **solo flags CLI** (sin comando de barra) — se guardan en
 | Flag | Qué hace |
 |---|---|
 | `--ip <IP>` | guarda la IP del dispositivo |
-| `--preset default\|hosts\|anime\|custom` | cambia el modo de visualización (ver [modo GIF](#modo-gif-y-presets)) |
+| `--preset default\|hosts\|custom` | cambia el modo de visualización (ver [modo GIF](#modo-gif-y-presets)) |
 | `--layout frame\|fullscreen` | diseño del modo gif (`frame` conserva cabecera+pie; `fullscreen` es solo el GIF) |
 | `--test [state] [subtitle]` | envía un fotograma; respeta el preset actual, así que también previsualiza el modo gif |
 
