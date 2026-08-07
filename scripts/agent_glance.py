@@ -34,6 +34,15 @@ TMP_DIR = os.environ.get("TEMP") or "/tmp"
 TMP_GIF = os.path.join(TMP_DIR, "agent_status.gif")
 THROTTLE_PATH = os.path.join(TMP_DIR, "agent_glance_last.json")
 ERRLOG = os.path.join(TMP_DIR, "agent_glance_error.log")
+
+
+def _log_err(label, exc):
+    """Best-effort append to ERRLOG; never raises."""
+    try:
+        with open(ERRLOG, "a") as fh:
+            fh.write("{} {}: {}\n".format(time.strftime("%Y-%m-%d %H:%M:%S"), label, exc))
+    except Exception:
+        pass
 # Race-resolution state: events from independent hook processes land here, a
 # single detached worker drains them under a device lock so only the
 # highest-priority, latest state reaches the device.
@@ -179,6 +188,10 @@ def _resolve_char(preset, host, state, cfg):
 # ffmpeg is a soft dependency — without it, the source is returned as-is and
 # the device relies on render_gif's _MAX_FRAMES cap alone (no regression).
 _MAX_BYTES = 300_000
+# _NORM_TARGET_FRAMES < _MAX_FRAMES intentionally: normalized sources land at
+# ~14 frames so they stay comfortably below the runtime cap (16), leaving
+# headroom for any off-by-one in step rounding without triggering a re-sample
+# inside render_gif's _load_gif_frames.
 _NORM_TARGET_FRAMES = 14
 
 _FFMPEG_BIN = None  # memoized by _have_ffmpeg
@@ -253,13 +266,17 @@ def _ffmpeg_normalize(src, layout, out, max_colors):
           "[s0]palettegen=max_colors={}:stats_mode=diff[p];"
           "[s1][p]paletteuse=dither=bayer").format(step, geom, max_colors)
     try:
-        subprocess.check_call(
+        proc = subprocess.run(
             [_have_ffmpeg(), "-y", "-i", src, "-vf", vf, "-vsync", "0", out],
             timeout=30,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
         )
+        if proc.returncode != 0:
+            _log_err("ffmpeg", (proc.stderr or b"").decode(errors="replace")[-300:])
+            return False
         return os.path.exists(out) and os.path.getsize(out) > 0
-    except Exception:
+    except Exception as e:
+        _log_err("ffmpeg", e)
         return False
 
 
@@ -979,16 +996,20 @@ def _load_gif_frames(path):
     with Image.open(path) as im:
         n = getattr(im, "n_frames", 1) or 1
         canvas = None
+        prev_disposal = 0
         for i in range(n):
             im.seek(i)
             dur = max(_MIN_FRAME_MS, int(im.info.get("duration") or 100))
             disposal = im.info.get("disposal", 0)
             frame_rgba = im.convert("RGBA")
-            # disposal 2 (restore-to-background) -> reset canvas; 1/none -> accumulate
-            if canvas is None or disposal == 2:
+            # Apply the *previous* frame's disposal before compositing the
+            # current one (GIF89a spec: disposal describes what to do with
+            # the frame *after* it has been shown, i.e. before the next).
+            if canvas is None or prev_disposal == 2:
                 canvas = Image.new("RGBA", im.size, (0, 0, 0, 0))
             canvas = Image.alpha_composite(canvas, frame_rgba)
             frames.append((canvas.convert("RGB"), dur))
+            prev_disposal = disposal
     if not frames:
         raise ValueError("no frames in " + path)
     if len(frames) > _MAX_FRAMES:
@@ -1110,11 +1131,7 @@ def push_state(state, sub=None, info=None):
         try:
             gif = render_gif(state, sub, info, char_path, layout)
         except Exception as e:
-            try:
-                with open(ERRLOG, "a") as fh:
-                    fh.write("{} render_gif: {}\n".format(time.strftime("%Y-%m-%d %H:%M:%S"), e))
-            except Exception:
-                pass
+            _log_err("render_gif", e)
             gif = render(state, sub, info)   # never blank the screen
     else:
         gif = render(state, sub, info)
@@ -1142,11 +1159,7 @@ def _flush_worker():
                 return
             push_state(final["state"], final.get("sub"), final.get("info"))
     except Exception as e:
-        try:
-            with open(ERRLOG, "a") as fh:
-                fh.write("{} flush: {}\n".format(time.strftime("%Y-%m-%d %H:%M:%S"), e))
-        except Exception:
-            pass
+        _log_err("flush", e)
 
 
 def _unix_detach(fn):
@@ -1180,11 +1193,7 @@ def _win_detach_flush():
             creationflags=creationflags,
         )
     except Exception as e:
-        try:
-            with open(ERRLOG, "a") as fh:
-                fh.write("{} win_spawn: {}\n".format(time.strftime("%Y-%m-%d %H:%M:%S"), e))
-        except Exception:
-            pass
+        _log_err("win_spawn", e)
 
 
 def _spawn_flush():
@@ -1409,9 +1418,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        try:
-            with open(ERRLOG, "a") as fh:
-                fh.write("{} {}\n".format(time.strftime("%Y-%m-%d %H:%M:%S"), e))
-        except Exception:
-            pass
+        _log_err("main", e)
     sys.exit(0)  # never block the hook
