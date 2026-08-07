@@ -80,7 +80,7 @@ def load_config():
     # Env vars take precedence (portable across machines + plugin installs);
     # config.json is an optional local fallback for the personal setup.
     cfg = {"ip": "", "context_limit": 200000,
-           "display": {"preset": "default", "layout": "frame", "gifs": {}}}
+           "display": {"preset": "hosts", "layout": "frame", "gifs": {}}}
     if os.path.exists(CONFIG_PATH):
         try:
             cfg.update(json.load(open(CONFIG_PATH)))
@@ -91,7 +91,7 @@ def load_config():
     d = cfg.get("display")
     if not isinstance(d, dict):
         d = {}
-    d.setdefault("preset", "default")
+    d.setdefault("preset", "hosts")
     d.setdefault("layout", "frame")
     d.setdefault("gifs", {})
     cfg["display"] = d
