@@ -452,6 +452,30 @@ def fw_show_status():
     return set_photo_enabled(STATUS_FILE, True)
 
 
+# SmallTV Ultra theme ids, addressable by name from --theme.
+THEME_ALIASES = {
+    "weather": 1, "forecast": 2, "photo": 3, "monitor": 3,
+    "clock": 4, "clock2": 5, "clock3": 6, "simple": 7,
+}
+
+
+def set_theme(arg):
+    """Switch the device theme (Ultra only). The monitor re-asserts itself on
+    the next push, so this is a peek, not a takeover."""
+    if _fw() != "ultra":
+        raise RuntimeError("--theme is only supported on SmallTV Ultra firmware")
+    tid = THEME_ALIASES.get(arg)
+    if tid is None:
+        try:
+            tid = int(arg)
+        except ValueError:
+            raise RuntimeError("unknown theme %r — use %s or a numeric id 1-7"
+                               % (arg, "|".join(sorted(set(THEME_ALIASES)))))
+    code = _get_status("/set?theme=%d" % tid)
+    print("theme set: %s -> %d (HTTP %d)" % (arg, tid, code))
+    print("monitor returns automatically on the next agent activity")
+
+
 # ---------------------------------------------------------------- race resolution
 # Each host fires every hook event in its OWN process, so events can't share
 # in-process state. We serialize device access across processes: events land in
@@ -1503,6 +1527,8 @@ def main():
                   " detection retries on next push")
     elif a == "--setup":
         setup()
+    elif a == "--theme" and len(args) > 1:
+        set_theme(args[1])
     elif a == "--restore":
         restore()
     elif a == "--test":
@@ -1541,4 +1567,6 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         _log_err("main", e)
+        if sys.argv[1:]:            # CLI use: show the failure; hook use
+            print("error:", e)      # (no args) stays silent + non-blocking
     sys.exit(0)  # never block the hook

@@ -222,6 +222,7 @@ Resolution order per push: `gifs[host][state]` → `gifs[host]` → `gifs["defau
 | `/agent-glance:setup` | Full onboarding — discover device, verify firmware, save IP, back up, take over |
 | `/agent-glance:status` | Health check — reachability, active theme, duplicate hooks, error log |
 | `/agent-glance:test` | Push a frame (or cycle all three) to check rendering |
+| `/agent-glance:theme` | Peek at the device's own screens — weather, forecast, clocks (Ultra; monitor returns on next activity) |
 | `/agent-glance:restore` | Put the device back to its original clock and photos |
 
 A few options are **CLI flags only** (no slash command) — they persist to `~/.agent-glance/config.json`, mirroring `--ip`:
