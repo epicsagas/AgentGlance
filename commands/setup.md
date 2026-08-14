@@ -26,7 +26,9 @@ BASE=${BASE%.*}
 echo "scanning ${BASE}.1-254 ..."
 for i in $(seq 1 254); do
   ( curl -s -m 0.4 "http://${BASE}.${i}/photo/list" 2>/dev/null \
-      | grep -q '"files"' && echo "  FOUND ${BASE}.${i}" ) &
+      | grep -q '"files"' && echo "  FOUND SD_RU ${BASE}.${i}"
+    curl -s -m 0.4 "http://${BASE}.${i}/app.json" 2>/dev/null \
+      | grep -q '"theme"' && echo "  FOUND ULTRA ${BASE}.${i}" ) &
 done; wait
 ```
 
@@ -35,14 +37,16 @@ different firmware (see step 3).
 
 ## 3. Verify the firmware is supported
 
+Either firmware works — check both:
+
 ```bash
-curl -s -m 4 "http://<IP>/photo/list"
-curl -s -m 4 -o /dev/null -w "%{http_code}\n" "http://<IP>/theme/list"
+curl -s -m 4 "http://<IP>/photo/list"   # SD_RU / SD Pro: JSON with a "files" array
+curl -s -m 4 "http://<IP>/app.json"     # SmallTV Ultra: JSON with a "theme" key
 ```
 
-`/photo/list` must return JSON containing a `files` array. If it 404s, stop and
-tell the user their device runs a different firmware — stock GeekMagic and the
-ESP32 "PRO" expose a different API and are not supported by this plugin.
+One of the two must answer. If both 404, stop and tell the user their device
+runs a different firmware — other GeekMagic stock variants and the ESP32 "PRO"
+expose a different API and are not supported by this plugin.
 
 ## 4. Save the IP
 
@@ -72,7 +76,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --setup
 
 This backs up the device's current themes and photos to
 `~/.agent-glance/device_backup.json` **before** changing anything. Confirm the
-output reports active theme `[2]` (Photo).
+output reports active theme `[2]` (Photo) on SD_RU, or `3` (Photo Album) on
+SmallTV Ultra.
 
 ## 6. Show a frame and confirm
 

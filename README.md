@@ -41,13 +41,20 @@ If you've ever alt-tabbed back to a terminal and thought *"wait, has it been wai
 
 ## Requirements
 
-- A GeekMagic SmallTV running **SD_RU / SD Pro** community firmware (ESP8266). Quick check — this must return JSON with a `files` array:
+- A GeekMagic SmallTV running either supported firmware (auto-detected and saved on `--ip`):
+  - **SD_RU / SD Pro** community firmware (ESP8266) — quick check, this must return JSON with a `files` array:
 
-  ```bash
-  curl -s http://<DEVICE_IP>/photo/list
-  ```
-  
-  Stock GeekMagic firmware and the ESP32 "PRO" expose a *different* API and are **not** supported.
+    ```bash
+    curl -s http://<DEVICE_IP>/photo/list
+    ```
+
+  - **SmallTV Ultra stock firmware** (ESP32, [GeekMagicClock/smalltv-ultra](https://github.com/GeekMagicClock/smalltv-ultra)) — quick check, this must return JSON with a `theme` key:
+
+    ```bash
+    curl -s http://<DEVICE_IP>/app.json
+    ```
+
+  Other stock GeekMagic firmware variants and the ESP32 "PRO" expose a *different* API and are **not** supported.
   
 - The device on the same Wi-Fi as your machine.
 - Python 3.8+ with Pillow (`pip install Pillow`).
@@ -293,6 +300,26 @@ Gotchas found by probing a real device:
 - Disabling the *last* enabled theme or photo returns **HTTP 403** — an anti-blank-screen guard. Setup enables the target first, then disables the rest.
 - The ESP8266 is single-threaded and returns 403 when busy with a previous request, so uploads retry.
 - ⚠️ `/config` serves the device's **Wi-Fi password and weather API key in plaintext with no authentication**. That is the firmware's behaviour, not something this plugin introduces — but treat the device as untrusted on a shared network.
+
+## Device API reference (SmallTV Ultra stock firmware)
+
+Themes: 1 Weather Clock Today · 2 Weather Forecast · **3 Photo Album** · 4–6 Time styles · 7 Simple Weather Clock.
+
+| Action | Endpoint |
+|---|---|
+| upload image | `POST /doUpload?dir=/image/` (multipart field `image`; same-name re-upload overwrites) |
+| pin on screen | `GET /set?img=/image/<f>` (URL-encoded; requires theme 3) |
+| switch theme | `GET /set?theme=<n>` |
+| theme flags | `GET /set?theme_list=0,0,1,0,0,0,0&sw_en=0&theme_interval=10` |
+| delete file | `GET /delete?file=/image/<f>` |
+| read state | `GET /app.json` (`theme`), `/theme_list.json`, `/filelist?dir=/image/` (HTML table), `/space.json` |
+
+Gotchas found by probing a real device:
+
+- The displayed image is *pinned* by `/set?img=` — the album's other files stay but never rotate in (no per-photo enable flags like SD_RU; setup doesn't touch them).
+- Animated GIFs decode and loop locally; the whole 3 MB filesystem is shared with weather/clock assets, so keep GIFs small (~1 MB free on a stock device).
+- `/set?img=` and `/set?theme=` return the literal text `OK` on success, not JSON.
+- ⚠️ same trust posture as SD_RU: every endpoint is unauthenticated on the LAN.
 
 ## Limitations
 

@@ -14,10 +14,15 @@ raw output at the user.
    cat ~/.agent-glance/config.json 2>/dev/null || echo "(no config file — env only)"
    ```
 
-2. Device reachable + what it is showing:
+2. Device reachable + what it is showing. The config's `firmware` key says which
+   probe to use (`sd_ru` | `ultra`):
    ```bash
+   # sd_ru:
    curl -s -m 4 "http://${AGENT_GLANCE_IP}/photo/list" | python3 -m json.tool
    curl -s -m 4 "http://${AGENT_GLANCE_IP}/theme/list" | python3 -m json.tool
+   # ultra:
+   curl -s -m 4 "http://${AGENT_GLANCE_IP}/app.json"
+   curl -s -m 4 "http://${AGENT_GLANCE_IP}/filelist?dir=/image/" | grep -o 'agent_status[^'<']*'
    ```
 
 3. Recent errors (empty means healthy):
@@ -25,12 +30,13 @@ raw output at the user.
    [ -s /tmp/agent_glance_error.log ] && tail -10 /tmp/agent_glance_error.log || echo "no errors"
    ```
 
-Report as a short table: device online?, active theme (want id 2 = Photo),
-`agent_status.gif` present and enabled?, backup exists?, errors.
+Report as a short table: device online?, active theme (want id 2 = Photo on
+sd_ru, 3 = Photo Album on ultra), `agent_status.gif` present (and on sd_ru,
+enabled)?, backup exists?, errors.
 
 Flag these specific problems if you see them:
-- Active theme is not `[2]` → the device is showing a clock, not the monitor.
-  Re-run `/agent-glance:setup`.
+- Active theme is not Photo (`[2]` sd_ru / `3` ultra) → the device is showing a
+  clock, not the monitor. Re-run `/agent-glance:setup`.
 - Photos other than `agent_status.gif` are enabled → the display will rotate away
   from the status frame every few seconds.
 - Hooks registered in BOTH `~/.claude/settings.json` and this plugin → every

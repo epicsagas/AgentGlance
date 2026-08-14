@@ -1,10 +1,11 @@
 ---
 name: agent-glance
 description: >-
-  Connect a GeekMagic SmallTV (SD_RU/SDPro ESP8266 firmware) as a Claude Code
-  status monitor. Use when the user wants to show Claude's working/waiting/done
-  state, model, context %, and token counts on the SmallTV display. Triggers on
-  "smalltv", "geekmagic", "status monitor", "기기에 상태 표시", "시계 모니터".
+  Connect a GeekMagic SmallTV (SD_RU/SDPro ESP8266 or SmallTV Ultra stock
+  firmware — auto-detected) as a Claude Code status monitor. Use when the user
+  wants to show Claude's working/waiting/done state, model, context %, and
+  token counts on the SmallTV display. Triggers on "smalltv", "geekmagic",
+  "status monitor", "기기에 상태 표시", "시계 모니터".
 ---
 
 # agent-glance — Claude Code status on a GeekMagic SmallTV
@@ -79,10 +80,14 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --link-runtime
 
 ## Prerequisites
 
-1. **GeekMagic SmallTV on SD_RU / SD Pro firmware** (ESP8266). Verify by opening
-   `http://<DEVICE_IP>/` — the web UI title is "Умные погодные часы" (SD_RU) and
-   `/photo/list`, `/theme/list`, `/config` respond. (Official GeekMagic stock
-   firmware and SmallTV-PRO/ESP32 use a *different* API and are not supported.)
+1. **GeekMagic SmallTV on a supported firmware** — either works, auto-detected
+   on `--ip`:
+   - **SD_RU / SD Pro** (ESP8266): `/photo/list`, `/theme/list`, `/config`
+     respond with JSON.
+   - **SmallTV Ultra stock** (ESP32): `/app.json` responds with a `theme` key
+     and `/filelist?dir=/image/` lists files.
+   Other GeekMagic stock variants and SmallTV-PRO use a *different* API and
+   are not supported.
 2. **Device and this machine on the same Wi-Fi.**
 3. **Python 3.8+ with Pillow**: `python3 -c "import PIL"` — if missing,
    `pip install Pillow`.
@@ -189,6 +194,27 @@ Gotchas discovered by probing:
   guard). Setup enables the target first, then disables the rest.
 - `/config` exposes the device Wi-Fi password and weather API key with **no
   auth** — that is the firmware's behavior, not something this tool adds.
+
+## Verified device API (SmallTV Ultra stock firmware)
+
+Themes: 1 Weather Clock Today · 2 Weather Forecast · **3 Photo Album** ·
+4–6 Time styles · 7 Simple Weather Clock.
+
+| Action | Endpoint |
+|---|---|
+| upload image | `POST /doUpload?dir=/image/` (multipart field `image`; re-upload overwrites) |
+| pin on screen | `GET /set?img=/image/<f>` (URL-encoded; needs theme 3) |
+| switch theme | `GET /set?theme=<n>` |
+| theme flags | `GET /set?theme_list=0,0,1,0,0,0,0&sw_en=0&theme_interval=10` |
+| delete file | `GET /delete?file=/image/<f>` |
+| read state | `GET /app.json`, `/theme_list.json`, `/filelist?dir=/image/` (HTML), `/space.json` |
+
+Gotchas discovered by probing:
+- `/set?img=` *pins* one image; album files never rotate in (no per-photo
+  enable flags — setup leaves the user's album untouched).
+- GIFs decode and loop on-device, but flash is shared with clock/weather
+  assets (~1 MB free stock) — keep GIFs small.
+- `/set?*` answers literal `OK`, not JSON. All endpoints are unauthenticated.
 
 ## Limitations / notes
 

@@ -53,6 +53,8 @@ QUEUE_TTL = 30       # drop queue entries older than this (crash-recovery GC)
 
 STATUS_FILE = "agent_status.gif"     # fixed name -> overwrites itself (bounded flash use)
 PHOTO_THEME_ID = 2                # "Фото" theme on SD_RU firmware
+ULTRA_PHOTO_THEME = 3             # "Photo Album" theme on SmallTV Ultra firmware
+ULTRA_STATUS_PATH = "/image/" + STATUS_FILE   # fixed path -> overwrites itself
 THROTTLE_SEC = 8                  # skip re-push of identical state within this window
 GLOBAL_MIN_SEC = 2.0              # global rate floor between ANY two uploads (all sessions).
                                   # The ESP8266 needs render+flash-write+decode time per gif;
@@ -390,6 +392,60 @@ def set_photo_enabled(name, state):
 
 def set_theme_enabled(tid, state):
     return _get_status("/theme/toggle?" + urllib.parse.urlencode({"id": tid, "state": "1" if state else "0"}))
+
+
+# ---------------------------------------------------------------- firmware backends
+# Two device firmwares, one job: keep OUR gif on screen.
+#   sd_ru — GeekMagic SD_RU / SD Pro community firmware (ESP8266)
+#   ultra — GeekMagic SmallTV Ultra stock firmware (ESP32, GeekMagicClock/smalltv-ultra)
+# The type is probed once (at --ip time or lazily) and persisted in config.json.
+def detect_firmware(ip):
+    """Probe a device IP: returns 'sd_ru' | 'ultra' | None (unreachable/unknown)."""
+    base = "http://" + ip.replace("http://", "").rstrip("/")
+
+    def status(path):
+        try:
+            urllib.request.urlopen(urllib.request.Request(base + path), timeout=4)
+            return 200
+        except urllib.error.HTTPError as e:
+            return e.code
+        except Exception:
+            return 0
+
+    if status("/photo/list") == 200:
+        return "sd_ru"
+    if status("/app.json") == 200:
+        return "ultra"
+    return None
+
+
+def _fw():
+    """Current firmware, detecting + persisting on first use after an upgrade."""
+    fw = load_config().get("firmware")
+    if fw not in ("sd_ru", "ultra"):
+        fw = detect_firmware(load_config().get("ip", "")) or "sd_ru"
+        try:
+            cfg = json.load(open(CONFIG_PATH))
+            cfg["firmware"] = fw
+            json.dump(cfg, open(CONFIG_PATH, "w"), indent=2)
+        except Exception:
+            pass
+    return fw
+
+
+def fw_upload(gif):
+    """Upload the rendered gif, overwriting the previous status frame."""
+    if _fw() == "ultra":
+        _upload_with_retry("/doUpload?dir=/image/", "image", gif)
+    else:
+        _upload_with_retry("/photo/upload", "file", gif)
+
+
+def fw_show_status():
+    """Make the status gif the one on screen."""
+    if _fw() == "ultra":
+        return _get_status("/set?img=" + urllib.parse.quote(ULTRA_STATUS_PATH, safe=""))
+    return set_photo_enabled(STATUS_FILE, True)
 
 
 # ---------------------------------------------------------------- race resolution
@@ -1151,8 +1207,8 @@ def push_state(state, sub=None, info=None):
             gif = render(state, sub, info)   # never blank the screen
     else:
         gif = render(state, sub, info)
-    _upload_with_retry("/photo/upload", "file", gif)
-    set_photo_enabled(STATUS_FILE, True)
+    fw_upload(gif)
+    fw_show_status()
     json.dump({"key": key, "t": time.time(), "project": project}, open(THROTTLE_PATH, "w"))
     return True
 
@@ -1224,6 +1280,10 @@ def setup():
     if not load_config().get("ip"):
         raise RuntimeError("set IP first: agent_glance.py --ip <IP>")
 
+    if _fw() == "ultra":
+        _setup_ultra()
+        return
+
     backup = {
         "themes": {t["id"]: t["enabled"] for t in theme_list()["themes"]},
         "photos": {f["name"]: f["enabled"] for f in photo_list()["files"]},
@@ -1258,10 +1318,44 @@ def setup():
     print("restore later with: agent_glance.py --restore")
 
 
+def _setup_ultra():
+    # Ultra has no per-photo enable flags: the album holds all /image/ files and
+    # /set?img= pins the one on screen. Backup = active theme + enable flags.
+    backup = {
+        "firmware": "ultra",
+        "theme": json.loads(_get("/app.json"))["theme"],
+        "theme_list": json.loads(_get("/theme_list.json")),
+    }
+    json.dump(backup, open(BACKUP_PATH, "w"), indent=2)
+
+    render("done", "monitor ready")
+    _upload_with_retry("/doUpload?dir=/image/", "image", TMP_GIF)
+    time.sleep(0.5)
+    _get_status("/set?theme=%d" % ULTRA_PHOTO_THEME)
+    time.sleep(0.5)
+    _get_status("/set?img=" + urllib.parse.quote(ULTRA_STATUS_PATH, safe=""))
+
+    active = json.loads(_get("/app.json"))["theme"]
+    print("setup complete — device is now a Claude status display")
+    print("active theme id:", active, "(want %d)" % ULTRA_PHOTO_THEME)
+    print("restore later with: agent_glance.py --restore")
+
+
 def restore():
     if not os.path.exists(BACKUP_PATH):
         raise RuntimeError("no backup found at " + BACKUP_PATH)
     b = json.load(open(BACKUP_PATH))
+    if b.get("firmware") == "ultra":
+        tl = b["theme_list"]
+        _get_status("/set?theme_list=%s&sw_en=%s&theme_interval=%s" % (
+            tl.get("list", "0,0,1,0,0,0,0"), tl.get("sw_en", "0"), tl.get("sw_i", "10")))
+        _get_status("/set?theme=%d" % b["theme"])
+        try:
+            _get("/delete?file=" + urllib.parse.quote(ULTRA_STATUS_PATH, safe=""))
+        except Exception:
+            pass
+        print("restored — device back to its original themes/photos")
+        return
     for tid, en in b["themes"].items():
         set_theme_enabled(int(tid), en)
     for name, en in b["photos"].items():
@@ -1393,8 +1487,16 @@ def main():
     if a == "--ip" and len(args) > 1:
         cfg = load_config()
         cfg["ip"] = args[1]
-        json.dump(cfg, open(CONFIG_PATH, "w"), indent=2)
-        print("device IP saved:", args[1])
+        fw = detect_firmware(args[1])
+        if fw:
+            cfg["firmware"] = fw
+            json.dump(cfg, open(CONFIG_PATH, "w"), indent=2)
+            print("device IP saved:", args[1], "— firmware:", fw)
+        else:
+            json.dump(cfg, open(CONFIG_PATH, "w"), indent=2)
+            print("device IP saved:", args[1],
+                  "— WARNING: no supported firmware answered (/photo/list, /app.json);"
+                  " detection retries on next push")
     elif a == "--setup":
         setup()
     elif a == "--restore":
