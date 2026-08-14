@@ -1,6 +1,6 @@
 {
   "$schema": "https://antigravity.google/schemas/v1/plugin.json",
   "name": "agent-glance",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "GeekMagic SmallTV (SD_RU/SDPro ESP8266 or SmallTV Ultra, auto-detected) as a Claude Code status monitor — renders model/context/tokens to the device via hooks. IP via AGENT_GLANCE_IP env var."
 }
