@@ -444,6 +444,10 @@ def fw_upload(gif):
 def fw_show_status():
     """Make the status gif the one on screen."""
     if _fw() == "ultra":
+        # /set?img only takes effect inside the Photo Album theme, so re-assert
+        # it every push — the monitor recovers from a manual/web theme switch
+        # or a reboot on its own.
+        _get_status("/set?theme=%d" % ULTRA_PHOTO_THEME)
         return _get_status("/set?img=" + urllib.parse.quote(ULTRA_STATUS_PATH, safe=""))
     return set_photo_enabled(STATUS_FILE, True)
 
