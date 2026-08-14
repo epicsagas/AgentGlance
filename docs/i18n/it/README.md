@@ -44,14 +44,21 @@ Se sei mai tornato al terminale pensando *"aspetta, era tutto questo tempo che m
 
 ## Requisiti
 
-- Una GeekMagic SmallTV con firmware community **SD_RU / SD Pro** (ESP8266). Verifica rapida — questo deve restituire JSON con un array `files`:
+- Un GeekMagic SmallTV con uno dei firmware supportati (rilevato automaticamente e salvato con `--ip`):
+  - **SD_RU / SD Pro** firmware della community (ESP8266) — verifica rapida — questo comando deve restituire JSON con un array `files`:
 
-  ```bash
-  curl -s http://<DEVICE_IP>/photo/list
-  ```
-  
-  Il firmware ufficiale GeekMagic e il "PRO" basato su ESP32 espongono un'API *diversa* e **non sono supportati**.
-  
+    ```bash
+    curl -s http://<DEVICE_IP>/photo/list
+    ```
+
+  - **SmallTV Ultra firmware stock** (ESP32, [GeekMagicClock/smalltv-ultra](https://github.com/GeekMagicClock/smalltv-ultra)) — verifica rapida — questo comando deve restituire JSON con una chiave `theme`:
+
+    ```bash
+    curl -s http://<DEVICE_IP>/app.json
+    ```
+
+  Le altre varianti del firmware stock GeekMagic e la "PRO" ESP32 espongono un'API *diversa* e **non** sono supportate.
+
 - Il dispositivo deve trovarsi sulla stessa rete Wi-Fi di questa macchina.
 - Python 3.8+ con Pillow (`pip install Pillow`).
 
@@ -220,6 +227,7 @@ Ordine di risoluzione per ogni push: `gifs[host][state]` → `gifs[host]` → `g
 | `/agent-glance:setup` | Onboarding completo — individua il dispositivo, verifica il firmware, salva l'IP, esegue il backup, prende il controllo |
 | `/agent-glance:status` | Controllo di stato — raggiungibilità, tema attivo, hook duplicati, log degli errori |
 | `/agent-glance:test` | Invia un fotogramma (o li fa scorrere tutti e tre) per verificare il rendering |
+| `/agent-glance:theme` | Sbircia gli schermi nativi del dispositivo — meteo, previsioni, orologi (Ultra; il monitor torna alla prossima attività) |
 | `/agent-glance:restore` | Riporta il dispositivo al suo orologio e alle foto originali |
 
 Alcune opzioni sono **solo flag CLI** (nessun comando slash) — vengono salvate in `~/.agent-glance/config.json`, come `--ip`:
@@ -294,6 +302,26 @@ Stranezze scoperte esaminando un dispositivo reale:
 - Disabilitare l'*ultimo* tema o foto abilitati restituisce **HTTP 403** — una protezione contro lo schermo vuoto. Il setup abilita prima l'obiettivo e poi disabilita il resto.
 - L'ESP8266 è single-threaded e restituisce 403 quando è occupato con una richiesta precedente, quindi i caricamenti vengono ritentati.
 - ⚠️ `/config` espone la password Wi-Fi del dispositivo e la chiave dell'API meteo **in chiaro e senza alcuna autenticazione**. È un comportamento del firmware, non qualcosa che aggiunge questo plugin — ma tratta comunque il dispositivo come non affidabile su una rete condivisa.
+
+## Riferimento API del dispositivo (SmallTV Ultra, firmware stock)
+
+Temi: 1 Orologio meteo di oggi · 2 Previsioni · **3 Album foto** · 4–6 Stili orologio · 7 Orologio meteo semplice.
+
+| Action | Endpoint |
+|---|---|
+| caricare un'immagine | `POST /doUpload?dir=/image/` (campo multipart `image`; la ricarica con lo stesso nome sovrascrive) |
+| fissare a schermo | `GET /set?img=/image/<f>` (codificato URL; richiede il tema 3) |
+| cambiare tema | `GET /set?theme=<n>` |
+| flag dei temi | `GET /set?theme_list=0,0,1,0,0,0,0&sw_en=0&theme_interval=10` |
+| eliminare un file | `GET /delete?file=/image/<f>` |
+| leggere lo stato | `GET /app.json` (`theme`), `/theme_list.json`, `/filelist?dir=/image/`, `/space.json` |
+
+Incid scoperti sondando un dispositivo reale:
+
+- L'immagine mostrata è *fissata* da `/set?img=` — gli altri file dell'album restano ma non ruotano mai (niente flag per foto come su SD_RU; setup non li tocca).
+- Le GIF animate vengono decodificate e ripetute in locale; l'intero filesystem da 3 MB è condiviso con le risorse meteo/orologio, quindi tenete le GIF piccole (~1 MB liberi da nuovo).
+- `/set?img=` e `/set?theme=` restituiscono il testo letterale `OK`, non JSON.
+- ⚠️ stessa postura di fiducia di SD_RU: ogni endpoint è senza autenticazione sulla LAN.
 
 ## Limitazioni
 

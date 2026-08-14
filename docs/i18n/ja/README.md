@@ -44,14 +44,21 @@
 
 ## 必要条件
 
-- **SD_RU / SD Pro** コミュニティファームウェア(ESP8266)搭載の GeekMagic SmallTV。簡単な確認方法 — 次のコマンドが `files` 配列を含む JSON を返す必要があります:
+- 対応するファームウェアのいずれかが動作する GeekMagic SmallTV（`--ip` 保存時に自動検出・記録）:
+  - **SD_RU / SD Pro** コミュニティファームウェア (ESP8266) — 簡単チェック — このコマンドは `files` 配列を含む JSON を返す必要があります:
 
-  ```bash
-  curl -s http://<DEVICE_IP>/photo/list
-  ```
-  
-  GeekMagic 純正ファームウェアと ESP32 版「PRO」は *異なる* API を使用し、**非対応** です。
-  
+    ```bash
+    curl -s http://<DEVICE_IP>/photo/list
+    ```
+
+  - **SmallTV Ultra 標準ファームウェア** (ESP32, [GeekMagicClock/smalltv-ultra](https://github.com/GeekMagicClock/smalltv-ultra)) — 簡単チェック — このコマンドは `theme` キーを含む JSON を返す必要があります:
+
+    ```bash
+    curl -s http://<DEVICE_IP>/app.json
+    ```
+
+  その他の GeekMagic 標準ファームウェアおよび ESP32 "PRO" は*異なる* API を使用し、**サポートされません**。
+
 - デバイスはこのマシンと同じ Wi-Fi に接続している必要があります。
 - Pillow をインストールした Python 3.8+ (`pip install Pillow`)。
 
@@ -204,6 +211,7 @@ ffmpeg -framerate 10 -i frames/f_%03d.png \
 | `/agent-glance:setup` | フルオンボーディング — デバイス検出、ファームウェア確認、IP 保存、バックアップ、制御権取得 |
 | `/agent-glance:status` | ヘルスチェック — 疎通確認、有効なテーマ、重複フック、エラーログ |
 | `/agent-glance:test` | フレームを1つ(または3種類すべて)送信して表示を確認 |
+| `/agent-glance:theme` | 端末本体の画面を一時表示 — 天気・予報・時計（Ultra 専用。モニターは次のアクティビティで自動復帰） |
 | `/agent-glance:restore` | デバイスを元の時計・写真の状態に戻す |
 
 一部のオプションは **CLI フラグ専用** です(スラッシュコマンドはありません)。`--ip` と同様に `~/.agent-glance/config.json` に保存されます:
@@ -278,6 +286,26 @@ codex   $HOME/.codex/plugins/cache/epicsagas/AgentGlance/<version>/scripts/agent
 - 最後に残った有効なテーマや写真を無効化すると **HTTP 403** が返ります — 画面が空白になるのを防ぐガードです。セットアップは対象を先に有効化してから残りを無効化します。
 - ESP8266 はシングルスレッドで、前のリクエスト処理中は 403 を返すため、アップロードはリトライします。
 - ⚠️ `/config` は認証なしでデバイスの **Wi-Fi パスワードと天気 API キーを平文で** 提供します。これはこのプラグインが追加したものではなくファームウェア自体の挙動です — ただし共有ネットワーク上ではこのデバイスを信頼できないものとして扱ってください。
+
+## デバイス API リファレンス（SmallTV Ultra 標準ファームウェア）
+
+テーマ: 1 今日の天気時計 · 2 天気予報 · **3 フォトアルバム** · 4–6 時計スタイル · 7 シンプル天気時計。
+
+| Action | Endpoint |
+|---|---|
+| 画像アップロード | `POST /doUpload?dir=/image/` (multipart フィールド `image`; 同名再アップロードは上書き) |
+| 画面にピン留め | `GET /set?img=/image/<f>` (URL エンコード必須; テーマ 3 が必要) |
+| テーマ切替 | `GET /set?theme=<n>` |
+| テーマフラグ | `GET /set?theme_list=0,0,1,0,0,0,0&sw_en=0&theme_interval=10` |
+| ファイル削除 | `GET /delete?file=/image/<f>` |
+| 状態読み取り | `GET /app.json` (`theme`), `/theme_list.json`, `/filelist?dir=/image/`, `/space.json` |
+
+実機プロービングで判明した注意点:
+
+- 表示画像は `/set?img=` で*ピン留め*されます — アルバムの他ファイルは残りますがローテーションしません（SD_RU のような写真ごとの有効フラグはなく、setup は触れません）。
+- アニメーション GIF は端末内でデコード・ループ再生されます。3MB のファイルシステム全体を天気/時計アセットと共有するため、GIF は小さく保ってください（工場状態で約 1MB 空き）。
+- `/set?img=` と `/set?theme=` は JSON ではなくリテラルテキスト `OK` を返します。
+- ⚠️ SD_RU と同じ信頼モデル: すべてのエンドポイントが LAN 上で認証なしです。
 
 ## 制限事項
 

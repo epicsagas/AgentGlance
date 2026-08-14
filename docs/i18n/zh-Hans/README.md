@@ -44,14 +44,21 @@
 
 ## 环境要求
 
-- 运行 **SD_RU / SD Pro** 社区固件(ESP8266)的 GeekMagic SmallTV。快速验证方法 —— 以下命令必须返回包含 `files` 数组的 JSON:
+- 运行任一受支持固件的 GeekMagic SmallTV（`--ip` 保存时自动检测并记录）：
+  - **SD_RU / SD Pro** 社区固件 (ESP8266) — 快速检查 — 此命令应返回包含 `files` 数组的 JSON：
 
-  ```bash
-  curl -s http://<DEVICE_IP>/photo/list
-  ```
-  
-  GeekMagic 官方固件以及 ESP32 版的 "PRO" 使用 *不同* 的 API,**不受支持**。
-  
+    ```bash
+    curl -s http://<DEVICE_IP>/photo/list
+    ```
+
+  - **SmallTV Ultra 原厂固件** (ESP32, [GeekMagicClock/smalltv-ultra](https://github.com/GeekMagicClock/smalltv-ultra)) — 快速检查 — 此命令应返回包含 `theme` 键的 JSON：
+
+    ```bash
+    curl -s http://<DEVICE_IP>/app.json
+    ```
+
+  其他 GeekMagic 原厂固件变体和 ESP32 "PRO" 使用*不同的* API，**不**受支持。
+
 - 设备需与本机连接同一个 Wi-Fi。
 - Python 3.8+ 并安装 Pillow(`pip install Pillow`)。
 
@@ -204,6 +211,7 @@ ffmpeg -framerate 10 -i frames/f_%03d.png \
 | `/agent-glance:setup` | 完整上线流程 —— 发现设备、验证固件、保存 IP、备份、接管控制 |
 | `/agent-glance:status` | 健康检查 —— 可达性、当前主题、重复钩子、错误日志 |
 | `/agent-glance:test` | 推送一帧(或依次循环三种状态)以检查渲染效果 |
+| `/agent-glance:theme` | 快速查看设备自带画面 — 天气、预报、时钟（Ultra 专用；下次活动时监视器自动恢复） |
 | `/agent-glance:restore` | 把设备恢复到原来的时钟和照片状态 |
 
 有几个选项**仅作为 CLI 标志**提供(没有对应的斜杠命令),它们与 `--ip` 一样持久化到 `~/.agent-glance/config.json`:
@@ -278,6 +286,26 @@ codex   $HOME/.codex/plugins/cache/epicsagas/AgentGlance/<version>/scripts/agent
 - 关闭**最后一个**启用中的主题或照片会返回 **HTTP 403** —— 这是防止黑屏的保护机制。设置流程会先启用目标对象,再禁用其余的。
 - ESP8266 是单线程的,处理前一个请求时会返回 403,所以上传会重试。
 - ⚠️ `/config` 会在没有任何鉴权的情况下,以**明文**提供设备的 Wi-Fi 密码和天气 API 密钥。这是固件本身的行为,并非本插件新增的问题 —— 但在共享网络中,应将该设备视为不可信的。
+
+## 设备 API 参考（SmallTV Ultra 原厂固件）
+
+主题：1 今日天气时钟 · 2 天气预报 · **3 相册** · 4–6 时钟样式 · 7 简易天气时钟。
+
+| Action | Endpoint |
+|---|---|
+| 上传图片 | `POST /doUpload?dir=/image/` (multipart 字段 `image`；同名重传会覆盖) |
+| 固定到屏幕 | `GET /set?img=/image/<f>` (URL 编码；需要主题 3) |
+| 切换主题 | `GET /set?theme=<n>` |
+| 主题开关 | `GET /set?theme_list=0,0,1,0,0,0,0&sw_en=0&theme_interval=10` |
+| 删除文件 | `GET /delete?file=/image/<f>` |
+| 读取状态 | `GET /app.json` (`theme`), `/theme_list.json`, `/filelist?dir=/image/`, `/space.json` |
+
+实测真机时发现的注意点：
+
+- 显示的图片由 `/set?img=` *固定* — 相册其他文件保留但不会轮播（没有 SD_RU 那样的单图启用标志；setup 不会动它们）。
+- 动图在设备本地解码并循环；整个 3 MB 文件系统与天气/时钟资源共享，请保持 GIF 小（原厂约剩 1 MB）。
+- `/set?img=` 和 `/set?theme=` 返回字面文本 `OK`，不是 JSON。
+- ⚠️ 与 SD_RU 相同的信任模型：所有端点在局域网内无认证。
 
 ## 局限性
 

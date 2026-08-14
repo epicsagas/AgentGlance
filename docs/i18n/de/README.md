@@ -44,14 +44,21 @@ Wenn du schon mal zum Terminal zurückgekehrt bist und dachtest *"warte, hat die
 
 ## Voraussetzungen
 
-- Ein GeekMagic SmallTV mit **SD_RU / SD Pro** Community-Firmware (ESP8266). Schnelltest — dies muss JSON mit einem `files`-Array zurückgeben:
+- Ein GeekMagic SmallTV mit einer der unterstützten Firmwares (beim `--ip`-Speichern automatisch erkannt und gespeichert):
+  - **SD_RU / SD Pro** Community-Firmware (ESP8266) — Schnellcheck — dieser Befehl muss JSON mit einem `files`-Array zurückgeben:
 
-  ```bash
-  curl -s http://<DEVICE_IP>/photo/list
-  ```
-  
-  Die offizielle GeekMagic-Firmware und das ESP32-basierte "PRO" bieten eine *andere* API und werden **nicht unterstützt**.
-  
+    ```bash
+    curl -s http://<DEVICE_IP>/photo/list
+    ```
+
+  - **SmallTV Ultra Stock-Firmware** (ESP32, [GeekMagicClock/smalltv-ultra](https://github.com/GeekMagicClock/smalltv-ultra)) — Schnellcheck — dieser Befehl muss JSON mit einem `theme`-Schlüssel zurückgeben:
+
+    ```bash
+    curl -s http://<DEVICE_IP>/app.json
+    ```
+
+  Andere GeekMagic-Stock-Firmware-Varianten und das ESP32 "PRO" verwenden eine *andere* API und werden **nicht** unterstützt.
+
 - Das Gerät muss im selben WLAN wie dieser Rechner sein.
 - Python 3.8+ mit Pillow (`pip install Pillow`).
 
@@ -220,6 +227,7 @@ Auflösungsreihenfolge pro Push: `gifs[host][state]` → `gifs[host]` → `gifs[
 | `/agent-glance:setup` | Vollständige Einrichtung — Gerät finden, Firmware prüfen, IP speichern, sichern, Kontrolle übernehmen |
 | `/agent-glance:status` | Gesundheitscheck — Erreichbarkeit, aktives Theme, doppelte Hooks, Fehlerprotokoll |
 | `/agent-glance:test` | Sendet ein Bild (oder alle drei nacheinander), um das Rendering zu prüfen |
+| `/agent-glance:theme` | Kurz auf die Geräte-eigenen Bildschirme schauen — Wetter, Vorhersage, Uhren (Ultra; der Monitor kehrt bei der nächsten Aktivität zurück) |
 | `/agent-glance:restore` | Setzt das Gerät auf seine ursprüngliche Uhr und Fotos zurück |
 
 Einige Optionen gibt es **nur als CLI-Flag** (kein Slash-Command) — sie werden in `~/.agent-glance/config.json` gespeichert, analog zu `--ip`:
@@ -294,6 +302,26 @@ Eigenheiten, die beim Untersuchen eines echten Geräts gefunden wurden:
 - Das Deaktivieren des *letzten* aktivierten Themes oder Fotos liefert **HTTP 403** — ein Schutz gegen einen leeren Bildschirm. Das Setup aktiviert zuerst das Ziel und deaktiviert dann den Rest.
 - Der ESP8266 ist single-threaded und liefert 403, wenn er mit einer vorherigen Anfrage beschäftigt ist, daher werden Uploads wiederholt.
 - ⚠️ `/config` liefert das WLAN-Passwort des Geräts und den Wetter-API-Schlüssel **im Klartext und ohne Authentifizierung**. Das ist Verhalten der Firmware, nicht etwas, das dieses Plugin hinzufügt — behandle das Gerät in einem gemeinsam genutzten Netzwerk dennoch als nicht vertrauenswürdig.
+
+## Geräte-API-Referenz (SmallTV Ultra Stock-Firmware)
+
+Themes: 1 Wetteruhr Heute · 2 Wettervorhersage · **3 Fotoalbum** · 4–6 Uhrstile · 7 Einfache Wetteruhr.
+
+| Action | Endpoint |
+|---|---|
+| Bild hochladen | `POST /doUpload?dir=/image/` (multipart-Feld `image`; erneutes Hochladen unter gleichem Namen überschreibt) |
+| auf dem Bildschirm anheften | `GET /set?img=/image/<f>` (URL-kodiert; erfordert Theme 3) |
+| Theme wechseln | `GET /set?theme=<n>` |
+| Theme-Flags | `GET /set?theme_list=0,0,1,0,0,0,0&sw_en=0&theme_interval=10` |
+| Datei löschen | `GET /delete?file=/image/<f>` |
+| Status lesen | `GET /app.json` (`theme`), `/theme_list.json`, `/filelist?dir=/image/`, `/space.json` |
+
+Beim Sondieren eines echten Geräts gefundene Stolpersteine:
+
+- Das angezeigte Bild wird per `/set?img=` *angepinnt* — die übrigen Albumdateien bleiben, rotieren aber nie ein (keine Foto-Enable-Flags wie bei SD_RU; setup fasst sie nicht an).
+- Animierte GIFs werden lokal dekodiert und geloopt; das ganze 3-MB-Dateisystem wird mit Wetter-/Uhr-Assets geteilt — GIFs also klein halten (~1 MB frei ab Werk).
+- `/set?img=` und `/set?theme=` antworten mit dem Literal `OK`, nicht mit JSON.
+- ⚠️ gleiches Vertrauensmodell wie SD_RU: jeder Endpunkt ist im LAN ohne Authentifizierung offen.
 
 ## Einschränkungen
 

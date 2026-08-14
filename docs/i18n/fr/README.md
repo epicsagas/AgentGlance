@@ -44,14 +44,21 @@ Si vous êtes déjà revenu au terminal en pensant *"attends, ça fait tout ce t
 
 ## Prérequis
 
-- Une GeekMagic SmallTV sous firmware communautaire **SD_RU / SD Pro** (ESP8266). Vérification rapide — ceci doit renvoyer du JSON contenant un tableau `files` :
+- Une GeekMagic SmallTV sous l'un des firmwares pris en charge (détecté automatiquement et enregistré via `--ip`) :
+  - **SD_RU / SD Pro** firmware communautaire (ESP8266) — vérification rapide — cette commande doit renvoyer du JSON avec un tableau `files` :
 
-  ```bash
-  curl -s http://<DEVICE_IP>/photo/list
-  ```
-  
-  Le firmware d'origine GeekMagic et le "PRO" à base d'ESP32 exposent une API *différente* et **ne sont pas pris en charge**.
-  
+    ```bash
+    curl -s http://<DEVICE_IP>/photo/list
+    ```
+
+  - **SmallTV Ultra firmware d'origine** (ESP32, [GeekMagicClock/smalltv-ultra](https://github.com/GeekMagicClock/smalltv-ultra)) — vérification rapide — cette commande doit renvoyer du JSON avec une clé `theme` :
+
+    ```bash
+    curl -s http://<DEVICE_IP>/app.json
+    ```
+
+  Les autres variantes du firmware d'origine GeekMagic et la « PRO » ESP32 exposent une API *différente* et ne sont **pas** prises en charge.
+
 - L'appareil doit être sur le même Wi-Fi que cette machine.
 - Python 3.8+ avec Pillow (`pip install Pillow`).
 
@@ -220,6 +227,7 @@ Ordre de résolution à chaque envoi : `gifs[host][state]` → `gifs[host]` → 
 | `/agent-glance:setup` | Intégration complète — détecte l'appareil, vérifie le firmware, enregistre l'IP, sauvegarde, prend le contrôle |
 | `/agent-glance:status` | Vérification d'état — accessibilité, thème actif, hooks dupliqués, journal d'erreurs |
 | `/agent-glance:test` | Envoie une image (ou fait défiler les trois) pour vérifier le rendu |
+| `/agent-glance:theme` | Aperçu des écrans natifs de l'appareil — météo, prévisions, horloges (Ultra ; le moniteur revient à la prochaine activité) |
 | `/agent-glance:restore` | Remet l'appareil dans son état d'horloge et de photos d'origine |
 
 Quelques options sont **des flags CLI uniquement** (pas de commande slash) — elles persistent dans `~/.agent-glance/config.json`, comme `--ip` :
@@ -294,6 +302,26 @@ Particularités découvertes en sondant un appareil réel :
 - Désactiver le *dernier* thème ou la dernière photo activée renvoie **HTTP 403** — une protection contre l'écran noir. La configuration active d'abord la cible, puis désactive le reste.
 - L'ESP8266 est monothread et renvoie 403 lorsqu'il est occupé par une requête précédente, donc les envois réessaient.
 - ⚠️ `/config` expose le mot de passe Wi-Fi de l'appareil et la clé de l'API météo **en clair et sans authentification**. C'est le comportement du firmware, pas quelque chose ajouté par ce plugin — mais traitez l'appareil comme non fiable sur un réseau partagé.
+
+## Référence de l'API de l'appareil (SmallTV Ultra, firmware d'origine)
+
+Thèmes : 1 Horloge météo du jour · 2 Prévisions · **3 Album photo** · 4–6 Styles d'horloge · 7 Horloge météo simple.
+
+| Action | Endpoint |
+|---|---|
+| envoyer une image | `POST /doUpload?dir=/image/` (champ multipart `image` ; un renvoi sous le même nom écrase l'original) |
+| épingler à l'écran | `GET /set?img=/image/<f>` (encodé URL ; nécessite le thème 3) |
+| changer de thème | `GET /set?theme=<n>` |
+| indicateurs de thèmes | `GET /set?theme_list=0,0,1,0,0,0,0&sw_en=0&theme_interval=10` |
+| supprimer un fichier | `GET /delete?file=/image/<f>` |
+| lire l'état | `GET /app.json` (`theme`), `/theme_list.json`, `/filelist?dir=/image/`, `/space.json` |
+
+Pièges découverts en sondant un appareil réel :
+
+- L'image affichée est *épinglée* par `/set?img=` — les autres fichiers de l'album restent mais ne tournent jamais (pas d'indicateurs par photo comme SD_RU ; setup n'y touche pas).
+- Les GIF animés sont décodés et bouclés localement ; tout le système de 3 Mo est partagé avec les ressources météo/horloge, gardez donc les GIF petits (~1 Mo libre d'origine).
+- `/set?img=` et `/set?theme=` renvoient le littéral `OK`, pas du JSON.
+- ⚠️ même posture de confiance que SD_RU : chaque endpoint est non authentifié sur le LAN.
 
 ## Limitations
 

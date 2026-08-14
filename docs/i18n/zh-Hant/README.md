@@ -44,14 +44,21 @@
 
 ## 需求
 
-- 執行 **SD_RU / SD Pro** 社群韌體(ESP8266)的 GeekMagic SmallTV。快速驗證方式 —— 以下指令必須回傳含有 `files` 陣列的 JSON:
+- 運行任一受支援韌體的 GeekMagic SmallTV（`--ip` 儲存時自動偵測並記錄）：
+  - **SD_RU / SD Pro** 社群韌體 (ESP8266) — 快速檢查 — 此指令應回傳包含 `files` 陣列的 JSON：
 
-  ```bash
-  curl -s http://<DEVICE_IP>/photo/list
-  ```
-  
-  GeekMagic 原廠韌體與 ESP32 版的「PRO」使用 *不同* 的 API,**不受支援**。
-  
+    ```bash
+    curl -s http://<DEVICE_IP>/photo/list
+    ```
+
+  - **SmallTV Ultra 原廠韌體** (ESP32, [GeekMagicClock/smalltv-ultra](https://github.com/GeekMagicClock/smalltv-ultra)) — 快速檢查 — 此指令應回傳包含 `theme` 鍵的 JSON：
+
+    ```bash
+    curl -s http://<DEVICE_IP>/app.json
+    ```
+
+  其他 GeekMagic 原廠韌體變體與 ESP32 "PRO" 使用*不同的* API，**不**受支援。
+
 - 裝置需與此機器連線於同一個 Wi-Fi。
 - Python 3.8+ 並安裝 Pillow(`pip install Pillow`)。
 
@@ -204,6 +211,7 @@ ffmpeg -framerate 10 -i frames/f_%03d.png \
 | `/agent-glance:setup` | 完整上線流程 —— 尋找裝置、驗證韌體、儲存 IP、備份、取得控制權 |
 | `/agent-glance:status` | 健康檢查 —— 連線可達性、目前主題、重複掛鉤、錯誤紀錄 |
 | `/agent-glance:test` | 推送一幀(或依序循環三種狀態)以檢查渲染效果 |
+| `/agent-glance:theme` | 快速查看裝置自帶畫面 — 天氣、預報、時鐘（Ultra 專用；下次活動時監視器自動恢復） |
 | `/agent-glance:restore` | 將裝置還原為原本的時鐘與相片狀態 |
 
 有少數選項僅為 CLI 旗標(沒有對應的斜線指令),會像 `--ip` 一樣持久化寫入 `~/.agent-glance/config.json`。
@@ -278,6 +286,26 @@ codex   $HOME/.codex/plugins/cache/epicsagas/AgentGlance/<version>/scripts/agent
 - 關閉**最後一個**啟用中的主題或相片會回傳 **HTTP 403** —— 這是避免畫面全黑的保護機制。設定流程會先啟用目標對象,再停用其餘的。
 - ESP8266 為單執行緒,處理前一個請求時會回傳 403,因此上傳會重試。
 - ⚠️ `/config` 會在沒有任何驗證的情況下,以**明文**提供裝置的 Wi-Fi 密碼與天氣 API 金鑰。這是韌體本身的行為,並非本外掛新增的問題 —— 但在共用網路中,應將此裝置視為不可信任的。
+
+## 裝置 API 參考（SmallTV Ultra 原廠韌體）
+
+主題：1 今日天氣時鐘 · 2 天氣預報 · **3 相簿** · 4–6 時鐘樣式 · 7 簡易天氣時鐘。
+
+| Action | Endpoint |
+|---|---|
+| 上傳圖片 | `POST /doUpload?dir=/image/` (multipart 欄位 `image`；同名重傳會覆寫) |
+| 固定到畫面 | `GET /set?img=/image/<f>` (URL 編碼；需要主題 3) |
+| 切換主題 | `GET /set?theme=<n>` |
+| 主題開關 | `GET /set?theme_list=0,0,1,0,0,0,0&sw_en=0&theme_interval=10` |
+| 刪除檔案 | `GET /delete?file=/image/<f>` |
+| 讀取狀態 | `GET /app.json` (`theme`), `/theme_list.json`, `/filelist?dir=/image/`, `/space.json` |
+
+實測真機時發現的注意點：
+
+- 顯示的圖片由 `/set?img=` *固定* — 相簿其他檔案保留但不會輪播（沒有 SD_RU 那樣的單圖啟用旗標；setup 不會動它們）。
+- 動圖在裝置本機解碼並循環；整個 3 MB 檔案系統與天氣/時鐘資源共享，請保持 GIF 小（原廠約剩 1 MB）。
+- `/set?img=` 與 `/set?theme=` 回傳字面文字 `OK`，不是 JSON。
+- ⚠️ 與 SD_RU 相同的信任模型：所有端點在區域網路內無認證。
 
 ## 限制
 

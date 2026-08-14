@@ -44,14 +44,21 @@ Se você já voltou pro terminal e pensou *"espera, ele ficou me esperando o tem
 
 ## Requisitos
 
-- Uma GeekMagic SmallTV com firmware comunitário **SD_RU / SD Pro** (ESP8266). Verificação rápida — isto deve retornar JSON com um array `files`:
+- Uma GeekMagic SmallTV com qualquer um dos firmwares suportados (detetado automaticamente e guardado com `--ip`):
+  - **SD_RU / SD Pro** firmware da comunidade (ESP8266) — verificação rápida — este comando deve devolver JSON com um array `files`:
 
-  ```bash
-  curl -s http://<DEVICE_IP>/photo/list
-  ```
-  
-  O firmware oficial da GeekMagic e o "PRO" baseado em ESP32 expõem uma API *diferente* e **não são suportados**.
-  
+    ```bash
+    curl -s http://<DEVICE_IP>/photo/list
+    ```
+
+  - **SmallTV Ultra firmware de fábrica** (ESP32, [GeekMagicClock/smalltv-ultra](https://github.com/GeekMagicClock/smalltv-ultra)) — verificação rápida — este comando deve devolver JSON com uma chave `theme`:
+
+    ```bash
+    curl -s http://<DEVICE_IP>/app.json
+    ```
+
+  Outras variantes do firmware de fábrica da GeekMagic e a "PRO" ESP32 usam uma API *diferente* e **não** são suportadas.
+
 - O dispositivo precisa estar na mesma rede Wi-Fi que esta máquina.
 - Python 3.8+ com Pillow (`pip install Pillow`).
 
@@ -204,6 +211,7 @@ Ordem de resolução por push: `gifs[host][state]` → `gifs[host]` → `gifs["d
 | `/agent-glance:setup` | Integração completa — descobre o dispositivo, verifica o firmware, salva o IP, faz backup, assume o controle |
 | `/agent-glance:status` | Verificação de saúde — acessibilidade, tema ativo, hooks duplicados, log de erros |
 | `/agent-glance:test` | Envia um quadro (ou percorre os três) para verificar a renderização |
+| `/agent-glance:theme` | Espiar as telas nativas do dispositivo — clima, previsão, relógios (Ultra; o monitor volta na próxima atividade) |
 | `/agent-glance:restore` | Devolve o dispositivo ao seu relógio e fotos originais |
 
 Algumas opções são **apenas flags CLI** (sem comando de barra) — persistem em `~/.agent-glance/config.json`, espelhando `--ip`:
@@ -278,6 +286,26 @@ Peculiaridades encontradas ao investigar um dispositivo real:
 - Desabilitar o *último* tema ou foto habilitado retorna **HTTP 403** — uma proteção contra tela em branco. A configuração habilita primeiro o alvo e depois desabilita o restante.
 - O ESP8266 é single-threaded e retorna 403 quando está ocupado com uma requisição anterior, então os uploads tentam novamente.
 - ⚠️ `/config` expõe a senha de Wi-Fi do dispositivo e a chave da API de clima **em texto puro e sem autenticação**. Isso é comportamento do firmware, não algo adicionado por este plugin — ainda assim, trate o dispositivo como não confiável em uma rede compartilhada.
+
+## Referência da API do dispositivo (SmallTV Ultra, firmware de fábrica)
+
+Temas: 1 Relógio do tempo de hoje · 2 Previsão · **3 Álbum de fotos** · 4–6 Estilos de relógio · 7 Relógio simples.
+
+| Action | Endpoint |
+|---|---|
+| enviar imagem | `POST /doUpload?dir=/image/` (campo multipart `image`; reenviar com o mesmo nome sobrescreve) |
+| fixar no ecrã | `GET /set?img=/image/<f>` (codificado como URL; requer o tema 3) |
+| mudar de tema | `GET /set?theme=<n>` |
+| flags de temas | `GET /set?theme_list=0,0,1,0,0,0,0&sw_en=0&theme_interval=10` |
+| eliminar ficheiro | `GET /delete?file=/image/<f>` |
+| ler estado | `GET /app.json` (`theme`), `/theme_list.json`, `/filelist?dir=/image/`, `/space.json` |
+
+Armadilhas encontradas ao sondar um dispositivo real:
+
+- A imagem exibida fica *fixada* por `/set?img=` — os outros ficheiros do álbum ficam mas nunca alternam (sem flags por foto como no SD_RU; o setup não os toca).
+- Os GIFs animados são descodificados e repetidos localmente; todo o sistema de 3 MB é partilhado com os recursos de relógio/tempo, por isso mantenham os GIFs pequenos (~1 MB livre de fábrica).
+- `/set?img=` e `/set?theme=` devolvem o literal `OK`, não JSON.
+- ⚠️ mesma postura de confiança do SD_RU: todos os endpoints sem autenticação na LAN.
 
 ## Limitações
 

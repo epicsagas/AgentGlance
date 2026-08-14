@@ -44,14 +44,21 @@
 
 ## 요구 사항
 
-- **SD_RU / SD Pro** 커뮤니티 펌웨어(ESP8266)가 설치된 GeekMagic SmallTV. 간단 확인 — 아래 명령이 `files` 배열을 포함한 JSON을 반환해야 합니다:
+- 다음 지원 펌웨어 중 하나를 실행하는 GeekMagic SmallTV(`--ip` 저장 시 자동 감지되어 기록):
+  - **SD_RU / SD Pro** 커뮤니티 펌웨어 (ESP8266) — 간단 확인 — 이 명령은 `files` 배열을 포함한 JSON을 반환해야 합니다:
 
-  ```bash
-  curl -s http://<DEVICE_IP>/photo/list
-  ```
-  
-  GeekMagic 정식 펌웨어와 ESP32 기반 "PRO"는 *다른* API를 사용하며 **지원하지 않습니다**.
-  
+    ```bash
+    curl -s http://<DEVICE_IP>/photo/list
+    ```
+
+  - **SmallTV Ultra 정식 펌웨어** (ESP32, [GeekMagicClock/smalltv-ultra](https://github.com/GeekMagicClock/smalltv-ultra)) — 간단 확인 — 이 명령은 `theme` 키를 포함한 JSON을 반환해야 합니다:
+
+    ```bash
+    curl -s http://<DEVICE_IP>/app.json
+    ```
+
+  그 외 GeekMagic 정식 펌웨어 변형과 ESP32 "PRO"는 *다른* API를 사용하며 **지원하지 않습니다**.
+
 - 기기가 이 머신과 동일한 Wi-Fi에 연결되어 있어야 합니다.
 - Pillow가 설치된 Python 3.8+ (`pip install Pillow`).
 
@@ -220,6 +227,7 @@ ffmpeg -framerate 10 -i frames/f_%03d.png \
 | `/agent-glance:setup` | 전체 온보딩 — 기기 탐색, 펌웨어 확인, IP 저장, 백업, 제어권 확보 |
 | `/agent-glance:status` | 상태 점검 — 연결 가능 여부, 활성 테마, 중복 훅, 에러 로그 |
 | `/agent-glance:test` | 프레임 하나(또는 세 가지 모두)를 전송해 렌더링 확인 |
+| `/agent-glance:theme` | 기기 자체 화면 잠깐 보기 — 날씨, 예보, 시계 (Ultra; 모니터는 다음 활동 시 자동 복귀) |
 | `/agent-glance:restore` | 기기를 원래의 시계·사진 상태로 되돌림 |
 
 일부 옵션은 **CLI 플래그 전용**입니다 (슬래시 명령어 없음). `--ip`처럼 `~/.agent-glance/config.json`에 저장됩니다:
@@ -294,6 +302,26 @@ codex   $HOME/.codex/plugins/cache/epicsagas/AgentGlance/<version>/scripts/agent
 - 마지막으로 남은 활성 테마나 사진을 끄면 **HTTP 403**이 반환됩니다 — 화면이 완전히 비는 것을 막는 가드입니다. 설정 과정은 목표 대상을 먼저 활성화한 뒤 나머지를 비활성화합니다.
 - ESP8266은 싱글 스레드라 이전 요청 처리 중에는 403을 반환하므로, 업로드는 재시도합니다.
 - ⚠️ `/config`는 인증 없이 기기의 **Wi-Fi 비밀번호와 날씨 API 키를 평문으로** 제공합니다. 이는 이 플러그인이 추가한 것이 아니라 펌웨어 자체의 동작입니다 — 다만 공유 네트워크에서는 이 기기를 신뢰할 수 없는 것으로 취급하세요.
+
+## 기기 API 레퍼런스 (SmallTV Ultra 정식 펌웨어)
+
+테마: 1 오늘 날씨 시계 · 2 날씨 예보 · **3 사진 앨범** · 4–6 시계 스타일 · 7 심플 시계.
+
+| Action | Endpoint |
+|---|---|
+| 이미지 업로드 | `POST /doUpload?dir=/image/` (multipart 필드 `image`; 같은 이름 재업로드 시 덮어씀) |
+| 화면 고정 | `GET /set?img=/image/<f>` (URL 인코딩; 테마 3 필요) |
+| 테마 전환 | `GET /set?theme=<n>` |
+| 테마 플래그 | `GET /set?theme_list=0,0,1,0,0,0,0&sw_en=0&theme_interval=10` |
+| 파일 삭제 | `GET /delete?file=/image/<f>` |
+| 상태 읽기 | `GET /app.json` (`theme`), `/theme_list.json`, `/filelist?dir=/image/`, `/space.json` |
+
+실제 기기 프로빙으로 발견한 주의점:
+
+- 표시 이미지는 `/set?img=`로 *고정*됩니다 — 앨범의 나머지 파일은 남지만 절대 순환하지 않습니다(SD_RU 같은 사진별 활성 플래그가 없고, setup은 이를 건드리지 않습니다).
+- 애니메이션 GIF는 기기에서 디코딩·루프됩니다. 3MB 파일시스템 전체를 날씨/시계 에셋과 공유하므로 GIF는 작게 유지하세요(정션 기기 약 1MB 여유).
+- `/set?img=`, `/set?theme=`는 JSON이 아니라 리터럴 텍스트 `OK`를 반환합니다.
+- ⚠️ SD_RU와 동일한 신뢰 수준: 모든 엔드포인트가 LAN에서 인증 없이 열려 있습니다.
 
 ## 한계
 
