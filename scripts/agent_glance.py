@@ -1224,10 +1224,12 @@ def push_state(state, sub=None, info=None):
             and now - prev_t < THROTTLE_SEC):
         return False  # identical state pushed recently -> skip
     # A Notification landing after the turn's Stop must not flip DONE back to
-    # APPROVAL — waiting is only meaningful mid-turn (i.e. after a working
-    # push). Another project's session is exempt: its waiting is genuinely new.
-    if (prev_state == "done" and state == "waiting"
-            and prev_project == project and now - prev_t < 60):
+    # APPROVAL — waiting is only meaningful mid-turn, i.e. it is always
+    # preceded by a working push (new turn). The idle "waiting for your input"
+    # Notification fires ~60s after Stop, so a time window here would expire
+    # exactly when that notification lands. Another project's session is
+    # exempt: its waiting is genuinely new.
+    if prev_state == "done" and state == "waiting" and prev_project == project:
         return False  # stale post-Stop notification -> keep DONE on screen
 
     # Global rate floor: pace uploads so the device never receives two closer
@@ -1255,6 +1257,15 @@ def push_state(state, sub=None, info=None):
         gif = render(state, sub, info)
     fw_upload(gif)
     fw_show_status()
+    # Push history for after-the-fact diagnosis (what state/source actually
+    # reached the device, and when). Best-effort, never raises.
+    try:
+        with open(os.path.join(STATE_DIR, "pushes.log"), "a") as fh:
+            fh.write("{} state={} src={} project={}\n".format(
+                time.strftime("%Y-%m-%d %H:%M:%S"), state,
+                os.path.basename(char_path) if char_path else "static-frame", project))
+    except Exception:
+        pass
     json.dump({"key": key, "t": time.time(), "project": project}, open(THROTTLE_PATH, "w"))
     return True
 
