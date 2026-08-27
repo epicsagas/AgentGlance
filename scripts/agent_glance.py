@@ -13,6 +13,11 @@ Driven by Claude Code hooks (reads the hook JSON object from stdin).
   agent_glance.py --setup                  # take over device (backup + Photo-only)
   agent_glance.py --restore               # revert device to pre-setup state
   agent_glance.py --test working|waiting|done [subtitle]
+  agent_glance.py --theme <name>            # peek another screen theme (Ultra only)
+  agent_glance.py --preset default|hosts|anime|custom
+  agent_glance.py --layout frame|fullscreen
+  agent_glance.py --gif <path> [--host H] [--state S] [--layout L]   # custom gif helper
+  agent_glance.py --gif-remove [--host H] [--state S]
   agent_glance.py --flush-queue           # (internal) detached worker: debounce + single upload
 """
 import sys, os, json, time, mimetypes, uuid, subprocess, glob, re, math, shutil, hashlib
@@ -85,7 +90,7 @@ def load_config():
     # Env vars take precedence (portable across machines + plugin installs);
     # config.json is an optional local fallback for the personal setup.
     cfg = {"ip": "", "context_limit": 200000,
-           "display": {"preset": "hosts", "layout": "frame", "gifs": {}}}
+           "display": {"preset": "default", "layout": "frame", "gifs": {}}}
     if os.path.exists(CONFIG_PATH):
         try:
             cfg.update(json.load(open(CONFIG_PATH)))
@@ -96,7 +101,7 @@ def load_config():
     d = cfg.get("display")
     if not isinstance(d, dict):
         d = {}
-    d.setdefault("preset", "hosts")
+    d.setdefault("preset", "default")
     d.setdefault("layout", "frame")
     d.setdefault("gifs", {})
     cfg["display"] = d
@@ -1506,6 +1511,96 @@ def handle_hook():
     _spawn_flush()          # detached — caller returns immediately
 
 
+def _gif_flag(args, name):
+    """Pull a --flag <value> pair out of a --gif/--gif-remove arg tail."""
+    if name in args:
+        i = args.index(name)
+        if i + 1 < len(args):
+            return args[i + 1]
+    return None
+
+
+def set_gif(path, host=None, state=None, layout=None):
+    """Custom-gif helper: copy the source into USER_GIF_DIR and wire config.
+
+    Copies so the config survives the source file moving/deletion; the stored
+    path is the basename (resolved against USER_GIF_DIR by _unpack_entry).
+    Per-state entries land in gifs[host][state]; without --state the entry is
+    flat (all states). Sets preset to custom so the entry is actually used.
+    """
+    if not os.path.isfile(path):
+        print("gif not found:", path)
+        return
+    host = (host or "default").strip() or "default"
+    if state is not None:
+        state = state.strip().lower()
+        if state not in ("working", "waiting", "done"):
+            print("state must be one of: working | waiting | done")
+            return
+
+    os.makedirs(USER_GIF_DIR, exist_ok=True)
+    dest = os.path.join(USER_GIF_DIR, os.path.basename(path))
+    if os.path.exists(dest):
+        with open(path, "rb") as a, open(dest, "rb") as b:
+            if a.read() != b.read():   # same name, different file -> unique name
+                stem, ext = os.path.splitext(os.path.basename(path))
+                dest = os.path.join(
+                    USER_GIF_DIR, "{}-{}{}".format(stem, hashlib.md5(
+                        os.path.abspath(path).encode()).hexdigest()[:6], ext))
+    shutil.copy(path, dest)
+
+    entry = os.path.basename(dest)
+    if layout:
+        if layout not in ("frame", "fullscreen"):
+            print("layout must be: frame | fullscreen")
+            return
+        entry = {"path": entry, "layout": layout}
+
+    cfg = load_config()
+    gifs = cfg["display"]["gifs"]
+    if state:
+        cur = gifs.get(host)
+        # A flat entry applies to every state; keep it as the "default" key of
+        # the per-state map so it stays the fallback for unlisted states.
+        if not isinstance(cur, dict) or "path" in cur:
+            cur = {"default": cur} if cur else {}
+        cur[state] = entry
+        gifs[host] = cur
+    else:
+        gifs[host] = entry
+    if cfg["display"]["preset"] == "default":
+        cfg["display"]["preset"] = "custom"
+    json.dump(cfg, open(CONFIG_PATH, "w"), indent=2)
+    print("gif saved: {} [{}]{}{}".format(
+        os.path.basename(dest), host,
+        " state:" + state if state else " (all states)",
+        " layout:" + layout if layout else ""))
+
+
+def remove_gif(host=None, state=None):
+    """Undo set_gif: drop one state entry, or the whole host entry without --state."""
+    host = (host or "default").strip() or "default"
+    cfg = load_config()
+    gifs = cfg["display"]["gifs"]
+    if host not in gifs:
+        print("no gif configured for [{}]".format(host))
+        print("configured:", ", ".join(gifs) or "(none)")
+        return
+    if state:
+        state = state.strip().lower()
+        cur = gifs[host]
+        if isinstance(cur, dict) and "path" not in cur:
+            cur.pop(state, None)
+            if not cur:
+                del gifs[host]
+        else:
+            del gifs[host]   # flat entry covers every state; nothing finer to drop
+    else:
+        del gifs[host]
+    json.dump(cfg, open(CONFIG_PATH, "w"), indent=2)
+    print("gif removed [{}]{}".format(host, " state:" + state if state else ""))
+
+
 def main():
     args = sys.argv[1:]
     if not args:
@@ -1558,6 +1653,14 @@ def main():
         cfg["display"]["layout"] = val
         json.dump(cfg, open(CONFIG_PATH, "w"), indent=2)
         print("layout saved:", val)
+    elif a == "--gif" and len(args) > 1:
+        set_gif(args[1],
+                host=_gif_flag(args, "--host"),
+                state=_gif_flag(args, "--state"),
+                layout=_gif_flag(args, "--layout"))
+    elif a == "--gif-remove":
+        remove_gif(host=_gif_flag(args, "--host"),
+                   state=_gif_flag(args, "--state"))
     else:
         print(__doc__)
 

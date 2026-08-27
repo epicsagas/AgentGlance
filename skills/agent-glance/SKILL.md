@@ -120,8 +120,10 @@ first prompt after enabling animates the display.
 | `--restore` | Revert device to the pre-setup themes/photos |
 | `--test working\|waiting\|done [subtitle]` | Manual push (uses newest local transcript for metrics; respects the current preset, so it previews gif mode) |
 | `--ip <IP>` | Save IP to `~/.agent-glance/config.json` (alternative to the env var) |
-| `--preset default\|hosts\|custom` | Switch display mode (`default` = static frame; others = animated gif mode) |
+| `--preset default\|hosts\|custom` | Switch display mode (`default` = static frame, the out-of-the-box default; others = animated gif mode) |
 | `--layout frame\|fullscreen` | gif-mode layout: `frame` keeps header+footer; `fullscreen` is the GIF only |
+| `--gif <path> [--host H] [--state S] [--layout L]` | Custom-gif helper: copies the file into `~/.agent-glance/gifs/` and writes `display.gifs` (omit `--state` for one GIF for all states) |
+| `--gif-remove [--host H] [--state S]` | Undo `--gif` |
 
 ## GIF mode (optional)
 
@@ -142,7 +144,14 @@ mkdir -p ~/.agent-glance/gifs/hosts
 cp my-character.gif ~/.agent-glance/gifs/hosts/claude-code.gif
 ```
 
-`custom` lets the user map their own GIFs per host and per state in `~/.agent-glance/config.json`:
+`custom` lets the user map their own GIFs per host and per state. Easiest via the helper (writes the config itself — no JSON editing):
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --gif my.gif                  # fallback, all states
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --gif done.gif --state done   # per-state
+```
+
+Equivalent hand-edited `~/.agent-glance/config.json`:
 
 ```json
 "display": { "preset": "custom", "layout": "frame",

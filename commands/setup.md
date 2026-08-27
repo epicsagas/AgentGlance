@@ -79,14 +79,68 @@ This backs up the device's current themes and photos to
 output reports active theme `[2]` (Photo) on SD_RU, or `3` (Photo Album) on
 SmallTV Ultra.
 
-## 6. Show a frame and confirm
+## 6. Choose the display mode (fresh setup only)
+
+If step 1 found an existing config with a saved IP, the user already picked a
+mode — keep the current preset and skip to step 7. Otherwise ask which of the
+three modes they want (present all three; the first is the out-of-the-box
+default):
+
+**a) Static status frame (default)** — no animation, just the status screen:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --preset default
+```
+
+**b) Animated character (hosts)** — a looping per-host character GIF in the
+middle of the frame, header + status footer kept. Ships with neutral
+placeholders that work immediately:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --preset hosts
+```
+
+To swap in the user's own character instead, drop a GIF into the user dir
+(wins over bundled; updates on the next push, no restart). Name it for the
+host it replaces — `claude-code.gif`, `codex.gif`, `antigravity.gif`,
+`hermes.gif`, or `agent.gif` for any other host:
+
+```bash
+mkdir -p ~/.agent-glance/gifs/hosts
+cp my-character.gif ~/.agent-glance/gifs/hosts/claude-code.gif
+```
+
+**c) Custom GIFs** — the user's own GIFs, one for all states or one per state
+(working / waiting / done). Run the helper wizard:
+
+1. Ask whether they want **one GIF for everything** or **one per state**.
+2. For each GIF they provide, run (omit `--state` for the one-for-everything
+   case; add `--layout fullscreen` only if they want it edge-to-edge):
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --gif <PATH> [--state working|waiting|done] [--layout frame|fullscreen]
+```
+
+3. The helper copies the file into `~/.agent-glance/gifs/` and writes the
+   config itself — no manual JSON editing. Undo with `--gif-remove`.
+
+After choosing b or c, preview it:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --test working "gif preview"
+```
+
+The mode can be changed any time later with `--preset default|hosts|custom`.
+
+## 7. Show a frame and confirm
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --test done "monitor ready"
 ```
 
 Ask the user to confirm they see a green DONE screen with the model name, a
-context bar, and token counts along the bottom.
+context bar, and token counts along the bottom (in gif modes the character
+animation is in the middle; the green DONE footer is what confirms the state).
 
 Finally tell them:
 - Hooks are bundled with the plugin and fire automatically — but **hooks load at
@@ -94,27 +148,3 @@ Finally tell them:
   real activity.
 - `/agent-glance:restore` puts the device back to its original clock.
 - `/agent-glance:status` diagnoses a display that stops updating.
-
-## 7. Personalize (optional): gif mode
-
-The default is the static status frame. For a looping character animation in the
-middle of the frame (header + status footer kept), switch preset:
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --preset hosts
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --test working "gif preview"
-```
-
-`hosts` ships with neutral per-host placeholders that work immediately. To use
-the user's own character, drop a GIF into the user dir (wins over bundled;
-updates on the next push, no restart). Name it for the host it replaces —
-`claude-code.gif`, `codex.gif`, `antigravity.gif`, `hermes.gif`, or `agent.gif`
-for any other host:
-
-```bash
-mkdir -p ~/.agent-glance/gifs/hosts
-cp my-character.gif ~/.agent-glance/gifs/hosts/claude-code.gif
-```
-
-`custom` maps your own GIFs per host/state in `config.json`. See the repo README
-("GIF mode & presets") for the full schema.

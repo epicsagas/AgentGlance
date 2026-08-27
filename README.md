@@ -122,7 +122,7 @@ Config is read **env-var first**, falling back to `~/.agent-glance/config.json` 
 |---|---|---|
 | `AGENT_GLANCE_IP` | device IP — **required** | — |
 | `AGENT_GLANCE_CONTEXT_LIMIT` | context window used to scale the % bar | `200000` |
-| `AGENT_GLANCE_PRESET` | display preset: `default` \| `hosts` \| `custom` | `hosts` |
+| `AGENT_GLANCE_PRESET` | display preset: `default` \| `hosts` \| `custom` | `default` |
 | `AGENT_GLANCE_LAYOUT` | gif-mode layout: `frame` \| `fullscreen` | `frame` |
 
 ### GIF mode & presets
@@ -198,7 +198,15 @@ ffmpeg -framerate 10 -i frames/f_%03d.png \
 
 Still over 300 KB? Drop `max_colors` to 32 (try `dither=none` too) before cutting frame count — that's what actually keeps the loop expensive.
 
-`custom` reads `display.gifs` from `config.json`. Each host entry is either a path string (one GIF for all states) or a per-state map; `"default"` is the fallback. Any entry can also be `{"path": ..., "layout": "fullscreen"}` to go full-screen for that one:
+`custom` reads `display.gifs` from `config.json`. Easiest to set up with the helper — it copies the GIF into `~/.agent-glance/gifs/` and writes the config for you (omit `--state` for one GIF for all states; `--host` defaults to `"default"`):
+
+```bash
+python3 scripts/agent_glance.py --gif my.gif                     # fallback for all hosts/states
+python3 scripts/agent_glance.py --gif working.gif --state working
+python3 scripts/agent_glance.py --gif-remove                      # undo (--host/--state scope it)
+```
+
+Or hand-edit: each host entry is either a path string (one GIF for all states) or a per-state map; `"default"` is the fallback. Any entry can also be `{"path": ..., "layout": "fullscreen"}` to go full-screen for that one:
 
 ```json
 "display": {
@@ -232,6 +240,8 @@ A few options are **CLI flags only** (no slash command) — they persist to `~/.
 | `--ip <IP>` | save the device IP |
 | `--preset default\|hosts\|custom` | switch display mode (see [GIF mode](#gif-mode--presets)) |
 | `--layout frame\|fullscreen` | gif-mode layout (frame keeps header+footer; fullscreen is the GIF only) |
+| `--gif <path> [--host H] [--state S] [--layout L]` | custom-gif helper — copies the file and wires `display.gifs` (see schema below) |
+| `--gif-remove [--host H] [--state S]` | undo `--gif` |
 | `--test [state] [subtitle]` | push a frame; respects the current preset, so it previews gif mode too |
 
 ## How it works
