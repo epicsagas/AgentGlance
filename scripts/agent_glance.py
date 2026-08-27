@@ -614,16 +614,23 @@ def _resolve_state_key(ev, data):
 def _resolve(entries):
     """Pick the winning entry: most recent timestamp/seq wins, using priority as tiebreaker.
     Automatically expires stale 'approval' (waiting) entries older than 25 seconds.
+    A 'done' in the batch beats any 'waiting' in it: timestamp order cannot be
+    trusted between a Stop and its trailing Notification (they fire within the
+    same debounce window either way round), and STATE_PRIORITY exists precisely
+    so the screen never flips back to APPROVAL after a Stop.
     """
     if not entries:
         return None
     now = time.time()
     valid = []
+    has_done = any(e.get("state") == "done" for e in entries)
     for e in entries:
         ts = e.get("ts", 0)
         state = e.get("state")
         if state == "waiting" and (now - ts > 25):
             continue
+        if state == "waiting" and has_done:
+            continue  # done outranks a late waiting in the same burst
         valid.append(e)
     if not valid:
         return None
@@ -1216,6 +1223,12 @@ def push_state(state, sub=None, info=None):
     if (prev_state == state and prev_key == key and prev_project == project
             and now - prev_t < THROTTLE_SEC):
         return False  # identical state pushed recently -> skip
+    # A Notification landing after the turn's Stop must not flip DONE back to
+    # APPROVAL — waiting is only meaningful mid-turn (i.e. after a working
+    # push). Another project's session is exempt: its waiting is genuinely new.
+    if (prev_state == "done" and state == "waiting"
+            and prev_project == project and now - prev_t < 60):
+        return False  # stale post-Stop notification -> keep DONE on screen
 
     # Global rate floor: pace uploads so the device never receives two closer
     # than GLOBAL_MIN_SEC, regardless of how many sessions are driving it. The
