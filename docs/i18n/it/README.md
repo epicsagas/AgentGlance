@@ -64,20 +64,20 @@ Se sei mai tornato al terminale pensando *"aspetta, era tutto questo tempo che m
 
 ## Installazione
 
-Distribuito tramite il marketplace [`epicsagas/plugins`](https://github.com/epicsagas/plugins); il plugin vero e proprio si trova in [`epicsagas/AgentGlance`](https://github.com/epicsagas/AgentGlance).
+Installazione autonoma da questo repository — include il marketplace `agent-glance` omonimo; nessun hub richiesto.
 
 **Claude Code**
 
 ```bash
-claude plugin marketplace add epicsagas/plugins
-claude plugin install agent-glance@epicsagas
+claude plugin marketplace add epicsagas/AgentGlance
+claude plugin install agent-glance@agent-glance
 ```
 
 **Codex**
 
 ```bash
-codex plugin marketplace add epicsagas/plugins
-codex plugin add agent-glance@epicsagas
+codex plugin marketplace add epicsagas/AgentGlance
+codex plugin add agent-glance@agent-glance
 ```
 
 **agy (Antigravity)**

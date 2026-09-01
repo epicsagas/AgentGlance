@@ -64,20 +64,20 @@
 
 ## 설치
 
-[`epicsagas/plugins`](https://github.com/epicsagas/plugins) 마켓플레이스로 배포되며, 플러그인 본체는 [`epicsagas/AgentGlance`](https://github.com/epicsagas/AgentGlance)에 있습니다.
+이 레포지토리에서 단독 설치 — 플러그인과 동일한 이름의 `agent-glance` 마켓플레이스를 포함합니다. 허브 불필요.
 
 **Claude Code**
 
 ```bash
-claude plugin marketplace add epicsagas/plugins
-claude plugin install agent-glance@epicsagas
+claude plugin marketplace add epicsagas/AgentGlance
+claude plugin install agent-glance@agent-glance
 ```
 
 **Codex**
 
 ```bash
-codex plugin marketplace add epicsagas/plugins
-codex plugin add agent-glance@epicsagas
+codex plugin marketplace add epicsagas/AgentGlance
+codex plugin add agent-glance@agent-glance
 ```
 
 **agy (Antigravity)**

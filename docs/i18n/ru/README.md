@@ -64,20 +64,20 @@
 
 ## Установка
 
-Распространяется через маркетплейс [`epicsagas/plugins`](https://github.com/epicsagas/plugins); сам плагин находится в [`epicsagas/AgentGlance`](https://github.com/epicsagas/AgentGlance).
+Автономная установка из этого репозитория — встроен одноимённый маркетплейс `agent-glance`; хаб не нужен.
 
 **Claude Code**
 
 ```bash
-claude plugin marketplace add epicsagas/plugins
-claude plugin install agent-glance@epicsagas
+claude plugin marketplace add epicsagas/AgentGlance
+claude plugin install agent-glance@agent-glance
 ```
 
 **Codex**
 
 ```bash
-codex plugin marketplace add epicsagas/plugins
-codex plugin add agent-glance@epicsagas
+codex plugin marketplace add epicsagas/AgentGlance
+codex plugin add agent-glance@agent-glance
 ```
 
 **agy (Antigravity)**

@@ -64,20 +64,20 @@
 
 ## 安装
 
-通过 [`epicsagas/plugins`](https://github.com/epicsagas/plugins) 市场发布,插件本体位于 [`epicsagas/AgentGlance`](https://github.com/epicsagas/AgentGlance)。
+从本仓库独立安装 — 内置与插件同名的 `agent-glance` 市场,无需中心市场。
 
 **Claude Code**
 
 ```bash
-claude plugin marketplace add epicsagas/plugins
-claude plugin install agent-glance@epicsagas
+claude plugin marketplace add epicsagas/AgentGlance
+claude plugin install agent-glance@agent-glance
 ```
 
 **Codex**
 
 ```bash
-codex plugin marketplace add epicsagas/plugins
-codex plugin add agent-glance@epicsagas
+codex plugin marketplace add epicsagas/AgentGlance
+codex plugin add agent-glance@agent-glance
 ```
 
 **agy (Antigravity)**
