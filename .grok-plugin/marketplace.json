@@ -12,7 +12,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/epicsagas/AgentGlance.git",
-        "sha": "585805d1a40a521972539fc6d75285f1ce633ac7"
+        "sha": "7be4789f58d56079b6a319a4b9e521191e862236"
       },
       "homepage": "https://github.com/epicsagas/AgentGlance",
       "keywords": [
