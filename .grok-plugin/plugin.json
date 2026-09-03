@@ -17,8 +17,6 @@
     "hooks",
     "display"
   ],
-  "components": {
-    "skills": "./skills",
-    "hooks": "./hooks/hooks.json"
-  }
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json"
 }
