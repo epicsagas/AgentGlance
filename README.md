@@ -61,6 +61,15 @@ If you've ever alt-tabbed back to a terminal and thought *"wait, has it been wai
 
 ## Install
 
+### Grok Build (xAI)
+
+```bash
+grok plugin install epicsagas/AgentGlance --trust
+```
+
+Grok reads skills from `skills/` at the plugin root. No extra configuration needed.
+Note: hook-driven live status updates are wired for Claude Code, Codex, and agy; Grok hook wiring is pending.
+
 Standalone install from this repository — it ships its own `agent-glance` marketplace; no hub required.
 
 **Claude Code**
