@@ -8,7 +8,7 @@
       "name": "agent-glance",
       "source": {
         "source": "local",
-        "path": "./"
+        "path": "./plugins/agent-glance"
       },
       "pluginManifest": "./.codex-plugin/plugin.json",
       "policy": {
