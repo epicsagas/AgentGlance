@@ -1534,10 +1534,37 @@ EVENT_STATE = {
     "Stop":              "done",      # claude, codex, agy
 }
 
+# Grok stdin uses camelCase keys with snake_case *values*
+# (`hookEventName: "user_prompt_submit"`). Claude/Codex send PascalCase values.
+# Without this alias map the Grok hook exits 0 and the screen never updates.
+EVENT_ALIASES = {
+    "user_prompt_submit": "UserPromptSubmit",
+    "pre_invocation":     "PreInvocation",
+    "notification":       "Notification",
+    "permission_request": "PermissionRequest",
+    "stop":               "Stop",
+    "pre_tool_use":       "PreToolUse",
+    "post_tool_use":      "PostToolUse",
+}
+
+
+def _canonical_event(ev):
+    """Map host-specific event spellings onto EVENT_STATE keys."""
+    if not ev:
+        return ""
+    if ev in EVENT_STATE or ev in ("PreToolUse", "PostToolUse"):
+        return ev
+    return EVENT_ALIASES.get(ev) or EVENT_ALIASES.get(ev.lower()) or ev
+
 
 def _norm_event(data):
     """Return (event, transcript_path) across host payload conventions."""
-    ev = data.get("hook_event_name") or data.get("hookEventName") or ""
+    ev = (
+        data.get("hook_event_name")
+        or data.get("hookEventName")
+        or os.environ.get("GROK_HOOK_EVENT")
+        or ""
+    )
     tp = data.get("transcript_path") or data.get("transcriptPath") or ""
     # agy (Antigravity) does NOT send an event-name key on stdin — it tells the
     # event apart by which payload field is present. Infer it here so hooks fire.
@@ -1548,7 +1575,7 @@ def _norm_event(data):
             ev = "PreInvocation"
         elif "executionNum" in data or "terminationReason" in data or "fullyIdle" in data:
             ev = "Stop"
-    return ev, tp
+    return _canonical_event(ev), tp
 
 
 def _subtitle_for(ev, data):
