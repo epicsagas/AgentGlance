@@ -66,6 +66,12 @@ Wenn du schon mal zum Terminal zurückgekehrt bist und dachtest *"warte, hat die
 
 Eigenständige Installation aus diesem Repository — bringt den gleichnamigen `agent-glance`-Marktplatz mit; kein Hub nötig.
 
+**Grok Build (xAI)**
+
+```bash
+grok plugin install epicsagas/AgentGlance --trust
+```
+
 **Claude Code**
 
 ```bash
@@ -101,6 +107,7 @@ hermes plugins enable agent-glance
 | Codex | ✅ | ✅ | ✅ | Hook-Datei entspricht dem dokumentierten Schema; zur Laufzeit nicht verifiziert |
 | agy | ✅ | — | ✅ | Hook-Format entspricht einem tatsächlich installierten agy-Plugin; zur Laufzeit nicht verifiziert |
 | hermes | ✅ | — | ❌ | nur Skills — hermes registriert sich über `register(ctx)`, ohne angebundene Lifecycle-Hooks |
+| Grok Build | ✅ | ✅ | ✅ | Hook-Datei folgt dem Claude-kompatiblen Schema; nicht zur Laufzeit verifiziert |
 
 Danach das Gerät einrichten — das findet es, speichert die IP, sichert das Gerät und schaltet es in den Monitor-Modus:
 

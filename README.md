@@ -61,16 +61,15 @@ If you've ever alt-tabbed back to a terminal and thought *"wait, has it been wai
 
 ## Install
 
-### Grok Build (xAI)
+Standalone install from this repository — it ships its own `agent-glance` marketplace; no hub required.
+
+**Grok Build (xAI)**
 
 ```bash
 grok plugin install epicsagas/AgentGlance --trust
 ```
 
-Grok reads skills from `skills/` at the plugin root. No extra configuration needed.
-Hook-driven live status updates are wired for Claude Code, Codex, agy, and Grok (`hooks/hooks.json`: UserPromptSubmit / Notification / Stop).
-
-Standalone install from this repository — it ships its own `agent-glance` marketplace; no hub required.
+Grok reads skills and commands from the plugin root; live status hooks load from `hooks/hooks.json` (UserPromptSubmit / Notification / Stop).
 
 **Claude Code**
 
@@ -107,6 +106,7 @@ hermes plugins enable agent-glance
 | Codex | ✅ | ✅ | ✅ | hook file matches the documented schema; not runtime-verified |
 | agy | ✅ | ✅ (converted to skills) | ✅ | `agy plugin validate` passes: 1 skill, 4 commands, 1 hook group processed |
 | hermes | ✅ | — | ✅ | hooks registered in `__init__.py`; verified against a mock context, not a live session |
+| Grok Build | ✅ | ✅ | ✅ | hook file follows the Claude-compatible schema grok reuses; not runtime-verified |
 
 Then onboard the device — this finds it, saves the IP, backs up the device, and switches it to monitor mode:
 

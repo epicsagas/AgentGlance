@@ -66,6 +66,12 @@
 
 从本仓库独立安装 — 内置与插件同名的 `agent-glance` 市场,无需中心市场。
 
+**Grok Build (xAI)**
+
+```bash
+grok plugin install epicsagas/AgentGlance --trust
+```
+
 **Claude Code**
 
 ```bash
@@ -101,6 +107,7 @@ hermes plugins enable agent-glance
 | Codex | ✅ | ✅ | ✅ | 钩子文件与文档化的 schema 一致;尚未做运行时验证 |
 | agy | ✅ | — | ✅ | 钩子格式与一个实际安装的 agy 插件一致;尚未做运行时验证 |
 | hermes | ✅ | — | ❌ | 仅支持 skills —— hermes 只通过 `register(ctx)` 注册,没有接入生命周期钩子 |
+| Grok Build | ✅ | ✅ | ✅ | 钩子文件遵循 Claude 兼容架构；未经运行时验证 |
 
 接下来完成设备上线 —— 这会找到设备、保存 IP、备份设备,并切换到监视器模式:
 

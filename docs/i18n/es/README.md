@@ -66,6 +66,12 @@ Si alguna vez has vuelto a la terminal y has pensado *"espera, ¿llevaba todo es
 
 Instalación autónoma desde este repositorio — incluye el marketplace `agent-glance` homónimo; sin hub.
 
+**Grok Build (xAI)**
+
+```bash
+grok plugin install epicsagas/AgentGlance --trust
+```
+
 **Claude Code**
 
 ```bash
@@ -101,6 +107,7 @@ hermes plugins enable agent-glance
 | Codex | ✅ | ✅ | ✅ | el archivo de hooks coincide con el esquema documentado; sin verificar en ejecución |
 | agy | ✅ | — | ✅ | el formato de hooks coincide con un plugin de agy realmente instalado; sin verificar en ejecución |
 | hermes | ✅ | — | ❌ | solo skills — hermes se registra mediante `register(ctx)`, sin hooks de ciclo de vida conectados |
+| Grok Build | ✅ | ✅ | ✅ | el archivo de hooks sigue el esquema compatible con Claude; sin verificar en ejecución |
 
 Luego incorpora el dispositivo — esto lo encuentra, guarda la IP, hace una copia de seguridad del dispositivo y lo cambia al modo monitor:
 

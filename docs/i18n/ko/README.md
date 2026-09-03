@@ -66,6 +66,12 @@
 
 이 레포지토리에서 단독 설치 — 플러그인과 동일한 이름의 `agent-glance` 마켓플레이스를 포함합니다. 허브 불필요.
 
+**Grok Build (xAI)**
+
+```bash
+grok plugin install epicsagas/AgentGlance --trust
+```
+
 **Claude Code**
 
 ```bash
@@ -101,6 +107,7 @@ hermes plugins enable agent-glance
 | Codex | ✅ | ✅ | ✅ | 훅 파일이 문서화된 스키마와 일치함; 런타임 미검증 |
 | agy | ✅ | — | ✅ | 실제 설치된 agy 플러그인과 훅 형식이 일치함; 런타임 미검증 |
 | hermes | ✅ | — | ❌ | 스킬만 지원 — hermes는 `register(ctx)`로 등록할 뿐, 생명주기 훅은 연결되어 있지 않음 |
+| Grok Build | ✅ | ✅ | ✅ | 훅 파일이 Claude 호환 스키마를 따름; 런타임 미검증 |
 
 그다음 기기 온보딩을 진행합니다 — 기기를 찾고, IP를 저장하고, 기기를 백업한 뒤 모니터 모드로 전환합니다:
 

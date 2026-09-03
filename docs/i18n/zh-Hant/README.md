@@ -66,6 +66,12 @@
 
 從本儲存庫獨立安裝 — 內建與外掛同名的 `agent-glance` 市集,無需中心市場。
 
+**Grok Build (xAI)**
+
+```bash
+grok plugin install epicsagas/AgentGlance --trust
+```
+
 **Claude Code**
 
 ```bash
@@ -101,6 +107,7 @@ hermes plugins enable agent-glance
 | Codex | ✅ | ✅ | ✅ | 掛鉤檔案與文件化的 schema 一致;尚未做執行期驗證 |
 | agy | ✅ | — | ✅ | 掛鉤格式與一個實際安裝的 agy 外掛一致;尚未做執行期驗證 |
 | hermes | ✅ | — | ❌ | 僅支援 skills —— hermes 只透過 `register(ctx)` 註冊,沒有接上生命週期掛鉤 |
+| Grok Build | ✅ | ✅ | ✅ | 鉤子檔案遵循 Claude 相容架構；未經執行時驗證 |
 
 接著完成裝置上線 —— 這會尋找裝置、儲存 IP、備份裝置,並切換到監視器模式:
 

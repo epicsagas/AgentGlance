@@ -66,6 +66,12 @@
 
 このリポジトリから単体でインストール — プラグインと同名の `agent-glance` マーケットプレイスを同梱、ハブは不要です。
 
+**Grok Build (xAI)**
+
+```bash
+grok plugin install epicsagas/AgentGlance --trust
+```
+
 **Claude Code**
 
 ```bash
@@ -101,6 +107,7 @@ hermes plugins enable agent-glance
 | Codex | ✅ | ✅ | ✅ | フックファイルは文書化されたスキーマと一致;ランタイム未検証 |
 | agy | ✅ | — | ✅ | 実際にインストールされた agy プラグインとフック形式が一致;ランタイム未検証 |
 | hermes | ✅ | — | ❌ | スキルのみ対応 — hermes は `register(ctx)` で登録するだけで、ライフサイクルフックは接続されていません |
+| Grok Build | ✅ | ✅ | ✅ | フックファイルは Claude 互換スキーマに準拠。ランタイム未検証 |
 
 続いてデバイスをオンボーディングします — デバイスを検出し、IP を保存し、デバイスをバックアップしてからモニターモードに切り替えます:
 
