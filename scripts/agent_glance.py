@@ -773,6 +773,86 @@ def _estimate_tokens(text):
     return max(1, int(len(str(text)) / 3.5))
 
 
+def _apply_grok_signals(info, cwd, fallback_limit):
+    """Read model + context counters from grok's own session store.
+
+    grok keys sessions by URL-encoded cwd, then one directory per session:
+    ~/.grok/sessions/<encoded-cwd>/<session-id>/{signals,summary}.json.
+    signals.json carries the live counters the TUI shows, so no transcript
+    walk is needed. Returns True when it filled `info`.
+    """
+    try:
+        from urllib.parse import quote
+        root = os.path.expanduser("~/.grok/sessions")
+        enc = quote(os.path.abspath(cwd or os.getcwd()), safe="")
+        sess_dir = os.path.join(root, enc)
+        if not os.path.isdir(sess_dir):
+            return False
+        dirs = [os.path.join(sess_dir, d) for d in os.listdir(sess_dir)]
+        dirs = [d for d in dirs if os.path.isdir(d)]
+        if not dirs:
+            return False
+        latest = max(dirs, key=os.path.getmtime)
+
+        sig = {}
+        sig_path = os.path.join(latest, "signals.json")
+        if os.path.exists(sig_path):
+            with open(sig_path, errors="ignore") as fh:
+                sig = json.load(fh) or {}
+
+        model = sig.get("primaryModelId")
+        if not model:
+            summ_path = os.path.join(latest, "summary.json")
+            if os.path.exists(summ_path):
+                with open(summ_path, errors="ignore") as fh:
+                    model = (json.load(fh) or {}).get("current_model_id")
+        if model:
+            info["model"] = str(model)
+
+        info["ctx"] = int(sig.get("contextTokensUsed") or 0)
+        info["limit"] = int(sig.get("contextWindowTokens") or fallback_limit)
+        info["compacted"] = bool(sig.get("compactionCount"))
+        return True
+    except Exception:
+        return False
+
+
+def _apply_hermes_session(info, cwd, fallback_limit):
+    """Read the model out of hermes' session JSON.
+
+    A hermes session is one JSON object holding `model` and a `token_usage`
+    block. `prompt_tokens` is the live context occupancy (it already counts
+    the cached read), so it maps to the context bar; the window size is not
+    reported, so `limit` keeps the configured fallback. Returns True when it
+    filled `info`.
+    """
+    try:
+        roots = [
+            "~/.hermes/sessions",
+            "~/.config/hermes/sessions",
+            "~/.local/share/hermes/sessions",
+        ]
+        files = []
+        for r in roots:
+            files += glob.glob(os.path.expanduser(os.path.join(r, "*.json")))
+        if not files:
+            return False
+        files.sort(key=os.path.getmtime)
+        with open(files[-1], errors="ignore") as fh:
+            sess = json.load(fh) or {}
+        model = sess.get("model")
+        if not model:
+            return False
+        info["model"] = str(model)
+        usage = sess.get("token_usage") or {}
+        info["ctx"] = int(usage.get("prompt_tokens") or 0)
+        info["cum_in"] = int(usage.get("prompt_tokens") or 0)
+        info["cum_out"] = int(usage.get("completion_tokens") or 0)
+        return True
+    except Exception:
+        return False
+
+
 def _apply_agy_status_cache(info, cwd, fallback_limit):
     """Use agy's live status cache only for an agy invocation.
 
@@ -873,6 +953,12 @@ def parse_transcript(path=None, cwd=None, host=None):
     host = host or detect_host()
 
     if host == "antigravity" and _apply_agy_status_cache(info, cwd, fallback_limit):
+        return info
+
+    if host == "grok" and _apply_grok_signals(info, cwd, fallback_limit):
+        return info
+
+    if host == "hermes" and _apply_hermes_session(info, cwd, fallback_limit):
         return info
 
     if not path or not os.path.exists(path):
