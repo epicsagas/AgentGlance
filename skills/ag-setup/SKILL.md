@@ -1,5 +1,11 @@
 ---
-description: Onboard and set up the GeekMagic SmallTV as an agent status monitor — finds the device, saves its IP, backs up the device, and switches it to dedicated-display mode
+name: ag-setup
+description: >-
+  Onboard and set up the GeekMagic SmallTV as an agent status monitor — finds
+  the device, saves its IP, backs up the device, and switches it to
+  dedicated-display mode. Use when the user wants to connect, onboard, or
+  configure a SmallTV status monitor for the first time, or when they say
+  "setup smalltv", "기기 연결", "모니터 설정".
 ---
 
 Onboard the SmallTV status monitor. Walk the user through this; don't assume any
@@ -146,5 +152,5 @@ Finally tell them:
 - Hooks are bundled with the plugin and fire automatically — but **hooks load at
   session start**, so they must restart the agent before the display reacts to
   real activity.
-- `/agent-glance:restore` puts the device back to its original clock.
-- `/agent-glance:status` diagnoses a display that stops updating.
+- The `ag-restore` skill puts the device back to its original clock.
+- The `ag-status` skill diagnoses a display that stops updating.

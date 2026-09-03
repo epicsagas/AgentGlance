@@ -1,5 +1,9 @@
 ---
-description: Revert the SmallTV to the clock/themes it had before the monitor took it over
+name: ag-restore
+description: >-
+  Revert the SmallTV to the clock/themes it had before the monitor took it
+  over. Use when the user wants their original clock back, wants to undo the
+  monitor takeover, or says "원래대로", "시계로 돌려줘", "restore smalltv".
 ---
 
 Restore the SmallTV to its pre-monitor state.
@@ -25,4 +29,4 @@ Restore the SmallTV to its pre-monitor state.
 Report which themes/photos are enabled now. Note that the plugin's hooks still
 fire while the plugin is enabled — they will just re-upload `agent_status.gif` into
 the album on the next event. To stop updates entirely, the user should disable
-the plugin (`/plugin`), not only run restore.
+the plugin, not only run restore.

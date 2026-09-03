@@ -1,9 +1,14 @@
 ---
-description: Switch the SmallTV screen — weather, forecast, clocks, or back to the monitor
+name: ag-theme
+description: >-
+  Switch the SmallTV screen — weather, forecast, clocks, or back to the monitor
+  (SmallTV Ultra firmware only). Use when the user wants to show a different
+  screen on the device, or says "날씨 보여줘", "일기예보", "시계로 바꿔",
+  "smalltv theme".
 ---
 
-Switch what the SmallTV is showing (SmallTV Ultra firmware only). The requested
-theme is "$ARGUMENTS" — map loose wording to it (비/일기예보 → forecast etc.).
+Switch what the SmallTV is showing (SmallTV Ultra firmware only). Map loose
+wording from the user's request to a theme name (비/일기예보 → forecast etc.).
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --theme <name>

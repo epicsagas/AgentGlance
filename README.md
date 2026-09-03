@@ -101,21 +101,17 @@ hermes plugins enable agent-glance
 
 ### What each host gets
 
-| Host | Skills | Slash commands | Auto hooks | Status |
-|---|:--:|:--:|:--:|---|
-| Claude Code | ✅ | ✅ | ✅ | verified end to end |
-| Codex | ✅ | ✅ | ✅ | hook file matches the documented schema; not runtime-verified |
-| agy | ✅ | ✅ (converted to skills) | ✅ | `agy plugin validate` passes: 1 skill, 4 commands, 1 hook group processed |
-| hermes | ✅ | — | ✅ | hooks registered in `__init__.py`; verified against a mock context, not a live session |
-| Grok Build | ✅ | ✅ | ✅ | hook file follows the Claude-compatible schema grok reuses; not runtime-verified |
+| Host | Skills | Auto hooks | Status |
+|---|:--:|:--:|---|
+| Claude Code | ✅ | ✅ | verified end to end |
+| Codex | ✅ | ✅ | hook file matches the documented schema; not runtime-verified |
+| agy | ✅ | ✅ | `agy plugin validate` passes |
+| hermes | ✅ | ✅ | hooks registered in `__init__.py`; verified against a mock context, not a live session |
+| Grok Build | ✅ | ✅ | hooks inlined in the grok manifest (a file reference is not loaded); not runtime-verified |
 
-Then onboard the device — this finds it, saves the IP, backs up the device, and switches it to monitor mode:
+Then onboard the device — this finds it, saves the IP, backs up the device, and switches it to monitor mode. Ask the agent to set up the SmallTV monitor and it will pick up the `ag-setup` skill.
 
-```
-/agent-glance:setup
-```
-
-On hosts without slash commands, run the same steps by hand:
+To run the same steps by hand:
 
 ```bash
 python3 <plugin>/scripts/agent_glance.py --ip <DEVICE_IP>
@@ -233,17 +229,19 @@ Or hand-edit: each host entry is either a path string (one GIF for all states) o
 
 Resolution order per push: `gifs[host][state]` → `gifs[host]` → `gifs["default"]` → bundled hosts placeholder. A missing or unreadable GIF never blanks the screen — it falls back to the static frame.
 
-## Commands
+## Skills
 
-| Command | What it does |
+Ask for what you want in plain language; the agent picks the matching skill. Every host that loads skills gets all five, so there are no slash commands to keep in sync.
+
+| Skill | What it does |
 |---|---|
-| `/agent-glance:setup` | Full onboarding — discover device, verify firmware, save IP, back up, take over |
-| `/agent-glance:status` | Health check — reachability, active theme, duplicate hooks, error log |
-| `/agent-glance:test` | Push a frame (or cycle all three) to check rendering |
-| `/agent-glance:theme` | Peek at the device's own screens — weather, forecast, clocks (Ultra; monitor returns on next activity) |
-| `/agent-glance:restore` | Put the device back to its original clock and photos |
+| `ag-setup` | Full onboarding — discover device, verify firmware, save IP, back up, take over |
+| `ag-status` | Health check — reachability, active theme, duplicate hooks, error log |
+| `ag-test` | Push a frame (or cycle all three) to check rendering |
+| `ag-theme` | Peek at the device's own screens — weather, forecast, clocks (Ultra; monitor returns on next activity) |
+| `ag-restore` | Put the device back to its original clock and photos |
 
-A few options are **CLI flags only** (no slash command) — they persist to `~/.agent-glance/config.json`, mirroring `--ip`:
+A few options are **CLI flags only** — they persist to `~/.agent-glance/config.json`, mirroring `--ip`:
 
 | Flag | What it does |
 |---|---|

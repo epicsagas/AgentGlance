@@ -1,5 +1,10 @@
 ---
-description: Health check for the SmallTV monitor — device reachability, display state, config, and recent errors
+name: ag-status
+description: >-
+  Health check for the SmallTV monitor — device reachability, display state,
+  config, and recent errors. Use when the SmallTV display stops updating, shows
+  the wrong screen, or the user asks whether the monitor is working ("status
+  monitor 상태", "화면이 안 바뀐다", "smalltv 진단").
 ---
 
 Report the health of the SmallTV monitor. Run these and summarise; do not dump
@@ -36,7 +41,7 @@ enabled)?, backup exists?, errors.
 
 Flag these specific problems if you see them:
 - Active theme is not Photo (`[2]` sd_ru / `3` ultra) → the device is showing a
-  clock, not the monitor. Re-run `/agent-glance:setup`.
+  clock, not the monitor. Re-run the `ag-setup` skill.
 - Photos other than `agent_status.gif` are enabled → the display will rotate away
   from the status frame every few seconds.
 - Hooks registered in BOTH `~/.claude/settings.json` and this plugin → every

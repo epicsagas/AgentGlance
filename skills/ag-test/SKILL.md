@@ -1,6 +1,10 @@
 ---
-description: Push a test frame (working / waiting / done) to the SmallTV to check rendering
-argument-hint: "[working|waiting|done] [subtitle]"
+name: ag-test
+description: >-
+  Push a test frame (working / waiting / done) to the SmallTV to check
+  rendering. Use when the user wants to verify the display renders correctly,
+  preview a state or GIF preset, or says "테스트 프레임", "화면 확인",
+  "smalltv test".
 ---
 
 Push a test frame to the SmallTV so the user can check the display.
@@ -13,17 +17,19 @@ cat ~/.agent-glance/config.json 2>/dev/null || echo "(no saved config)"
 ```
 
 If neither is set, the device has never been onboarded — stop and tell the user
-to run `/agent-glance:setup` first. Do not guess an IP.
+to run the `ag-setup` skill first. Do not guess an IP.
 
 ## Push
 
-State: `$1` (default `waiting` — the most visually distinct). Subtitle: `$2`.
+Take the state (`working` | `waiting` | `done`) and an optional subtitle from
+what the user asked for. Default to `waiting` (the most visually distinct) and
+`test frame` when they did not say.
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --test "${1:-waiting}" "${2:-test frame}"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py" --test "<state>" "<subtitle>"
 ```
 
-If no arguments were given, cycle all three with a pause so the user can watch
+If the user did not name a state, cycle all three with a pause so they can watch
 the transitions, ending on `done`:
 
 ```bash
@@ -49,7 +55,7 @@ colour. If gif mode is on but no character resolves, it falls back to the static
 frame and logs to `/tmp/agent_glance_error.log`.
 
 Report accurately rather than guessing:
-- Nothing changes on screen → the device may not be in Photo mode; run
-  `/agent-glance:status`.
+- Nothing changes on screen → the device may not be in Photo mode; run the
+  `ag-status` skill.
 - Text renders as empty boxes → the font fallback has no glyphs for that
   script; say so instead of calling it a success.
