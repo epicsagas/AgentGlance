@@ -66,10 +66,11 @@ Standalone install from this repository — it ships its own `agent-glance` mark
 **Grok Build (xAI)**
 
 ```bash
+grok plugin marketplace add epicsagas/AgentGlance
 grok plugin install epicsagas/AgentGlance --trust
 ```
 
-Grok reads skills and commands from the plugin root; live status hooks load from `hooks/hooks.json` (UserPromptSubmit / Notification / Stop).
+The first line registers this repo's standalone marketplace (browse with `/marketplace`, keep current with `grok plugin update`); the install line alone also works as a direct install. Grok reads skills and commands from the plugin root; live status hooks load from `hooks/hooks.json` (UserPromptSubmit / Notification / Stop).
 
 **Claude Code**
 

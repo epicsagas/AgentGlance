@@ -69,6 +69,7 @@ Installation autonome depuis ce dépôt — embarque le marketplace `agent-glanc
 **Grok Build (xAI)**
 
 ```bash
+grok plugin marketplace add epicsagas/AgentGlance
 grok plugin install epicsagas/AgentGlance --trust
 ```
 
