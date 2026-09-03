@@ -709,6 +709,7 @@ def detect_host():
         ("/.codex/plugins/", "codex"),
         ("/.gemini/", "antigravity"),
         ("/.hermes/", "hermes"),
+        ("/.grok/installed-plugins/", "grok"),
     ):
         if frag in p:
             return label

@@ -68,7 +68,7 @@ grok plugin install epicsagas/AgentGlance --trust
 ```
 
 Grok reads skills from `skills/` at the plugin root. No extra configuration needed.
-Note: hook-driven live status updates are wired for Claude Code, Codex, and agy; Grok hook wiring is pending.
+Hook-driven live status updates are wired for Claude Code, Codex, agy, and Grok (`hooks/hooks.json`: UserPromptSubmit / Notification / Stop).
 
 Standalone install from this repository — it ships its own `agent-glance` marketplace; no hub required.
 

@@ -1,0 +1,38 @@
+{
+  "description": "SmallTV status monitor lifecycle hooks (Grok Build). Grok reuses the Claude hook schema and injects CLAUDE_PLUGIN_ROOT for plugin hooks (see its embedded 10-hooks.md), so the command stays identical to Claude Code.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
