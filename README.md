@@ -58,6 +58,12 @@ If you've ever alt-tabbed back to a terminal and thought *"wait, has it been wai
   
 - The device on the same Wi-Fi as your machine.
 - Python 3.8+ with Pillow (`pip install Pillow`).
+- **CJK/Hangul text** (project names, subtitles) renders with your system fonts:
+  - **macOS**: Apple SD Gothic Neo (ships by default)
+  - **Linux**: Noto Sans CJK (`fonts-noto-cjk`), NanumGothic (`fonts-nanum`), WQY MicroHei, or Baekmuk. On minimal/headless installs without any CJK font, install one (e.g. `sudo apt install fonts-noto-cjk`) — or drop any `.ttf`/`.otf`/`.ttc` into `assets/fonts/` and it is used automatically.
+  - **Windows**: Malgun Gothic / Microsoft YaHei (ships by default)
+  
+  These system fonts are used, never redistributed, per their respective licenses.
 
 ## Install
 
