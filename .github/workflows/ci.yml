@@ -8,9 +8,15 @@ on:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    # The renderer is cross-platform (macOS/Linux/Windows font discovery),
+    # so the suite runs on every OS we claim to support.
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash   # same shell syntax on all three runners
     strategy:
       matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.10", "3.11", "3.12"]
 
     steps:
@@ -50,7 +56,11 @@ jobs:
                           sys.exit(1)
           "
 
+      - name: Unit tests
+        run: |
+          python -m unittest discover -s tests -v
+
       - name: Dry Run Test Output (Generate Frame)
         run: |
           python scripts/agent_glance.py --test working "CI Test"
-          test -f /tmp/agent_status.gif
+          python -c "import os; p = os.path.join(os.environ.get('TEMP') or '/tmp', 'agent_status.gif'); assert os.path.getsize(p) > 0, p"
