@@ -20,7 +20,7 @@ Driven by Claude Code hooks (reads the hook JSON object from stdin).
   agent_glance.py --gif-remove [--host H] [--state S]
   agent_glance.py --flush-queue           # (internal) detached worker: debounce + single upload
 """
-import sys, os, json, time, mimetypes, uuid, subprocess, glob, re, math, shutil, hashlib
+import sys, os, json, time, mimetypes, uuid, subprocess, glob, re, math, shutil, hashlib, unicodedata
 import urllib.request, urllib.parse, urllib.error
 from contextlib import contextmanager
 from PIL import Image, ImageDraw, ImageFont
@@ -647,27 +647,144 @@ def _next_seq():
 
 
 # ---------------------------------------------------------------- rendering
+# Candidate font paths per OS. cjk=True picks a font with CJK glyphs so
+# Hangul/CJK renders instead of tofu; every mainstream OS ships at least one.
+# A bundled fallback font dropped into assets/fonts/ (any *.ttf/*.otf) is
+# tried before load_default() so minimal/headless systems can be fixed by
+# vendoring one file — none is shipped by default.
+_WIN_FONTS = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
+
+CJK_FONT_CANDIDATES = [
+    # macOS
+    "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+    "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    # Linux (Debian/Ubuntu, Fedora, Arch)
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+    "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+    "/usr/share/fonts/nanumfont/NanumGothic.ttf",
+    "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+    "/usr/share/fonts/baekmuk/gulim.ttf",
+    # Windows
+    os.path.join(_WIN_FONTS, "malgun.ttf"),
+    os.path.join(_WIN_FONTS, "malgunbd.ttf"),
+    os.path.join(_WIN_FONTS, "msyh.ttc"),
+    os.path.join(_WIN_FONTS, "msyh.ttf"),
+    os.path.join(_WIN_FONTS, "simsun.ttc"),
+]
+
+LATIN_FONT_CANDIDATES = [
+    # macOS
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf" if not sys.platform.startswith("win") else "",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/System/Library/Fonts/Helvetica.ttc",
+    # Linux
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    # Windows
+    os.path.join(_WIN_FONTS, "arialbd.ttf"),
+    os.path.join(_WIN_FONTS, "arial.ttf"),
+]
+
+
+def _bundled_font():
+    """Any fallback CJK font the user vendored into assets/fonts/."""
+    for pat in ("*.ttf", "*.otf", "*.ttc"):
+        for p in sorted(glob.glob(os.path.join(SCRIPT_DIR, os.pardir, "assets", "fonts", pat))):
+            return p
+    return None
+
+
 def _font(size, bold=True, cjk=False):
-    # cjk=True -> prefer a Korean(+Latin) font so Hangul renders instead of tofu.
-    if cjk:
-        cands = [
-            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
-            "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
-            "/System/Library/Fonts/Supplemental/Arial.ttf",
-        ]
-    else:
-        cands = [
-            "/System/Library/Fonts/Supplemental/Arial Bold.ttf" if bold
-            else "/System/Library/Fonts/Supplemental/Arial.ttf",
-            "/System/Library/Fonts/Helvetica.ttc",
-        ]
+    # cjk=True -> prefer a CJK-capable font (Korean + CJK + Latin) so Hangul
+    # renders instead of tofu on any of macOS / Linux / Windows.
+    cands = list(CJK_FONT_CANDIDATES if cjk else LATIN_FONT_CANDIDATES)
     for p in cands:
-        if os.path.exists(p):
+        if p and os.path.exists(p):
             try:
                 return ImageFont.truetype(p, size)
             except Exception:
                 pass
+    if cjk:
+        bf = _bundled_font()
+        if bf:
+            try:
+                return ImageFont.truetype(bf, size)
+            except Exception:
+                pass
     return ImageFont.load_default()
+
+
+def _dispw(text):
+    """Visual column width: East Asian Wide/Fullwidth count as 2 columns."""
+    return sum(2 if unicodedata.east_asian_width(ch) in "WF" else 1 for ch in text)
+
+
+def _wrap(text, font, max_w, draw, max_lines=2):
+    """Wrap at max_w pixels. CJK chars break per character; runs of Latin
+    (narrow, non-space) chars stay whole words. A single token wider than
+    max_w is hard-split so one long unbroken string cannot overflow."""
+    def tokenize(s):
+        toks, word = [], ""
+        for ch in s:
+            if ch == " ":
+                if word:
+                    toks.append(word)
+                    word = ""
+                toks.append(" ")
+            elif unicodedata.east_asian_width(ch) in "WF":
+                if word:
+                    toks.append(word)
+                    word = ""
+                toks.append(ch)
+            else:
+                word += ch
+        if word:
+            toks.append(word)
+        return toks
+
+    def fits(tok):
+        return draw.textlength(tok, font=font) <= max_w
+
+    lines = []
+    for line_src in text.split("\n"):
+        cur = ""
+        for tok in tokenize(line_src):
+            trial = cur + tok
+            if fits(trial):
+                cur = trial
+                continue
+            # overflow
+            if tok == " ":
+                # trailing spaces never start a line
+                if cur:
+                    lines.append(cur)
+                    cur = ""
+                continue
+            if cur:
+                # a trailing space was a break separator; don't carry it over
+                lines.append(cur[:-1] if cur.endswith(" ") else cur)
+                cur = ""
+            # token alone wider than max_w -> hard-split by chars
+            while tok and not fits(tok):
+                lo, hi = 1, len(tok)
+                while lo < hi:
+                    mid = (lo + hi + 1) // 2
+                    if fits(tok[:mid]):
+                        lo = mid
+                    else:
+                        hi = mid - 1
+                lines.append(tok[:lo])
+                tok = tok[lo:]
+            cur = tok
+        lines.append(cur)
+        if len(lines) >= max_lines:
+            return lines[:max_lines]
+    return [ln for ln in lines if ln][:max_lines]
 
 
 # bg, label color, accent/dot, big word, subtitle default
@@ -676,24 +793,6 @@ STATES = {
     "waiting": dict(bg=(150, 27, 27),  fg=(255, 255, 255), label="APPROVAL", sub="needs your input", pulse=False),
     "done":    dict(bg=(20, 62, 49),   fg=(120, 230, 150), label="DONE",     sub="idle — ready",     pulse=False),
 }
-
-
-def _wrap(text, font, max_w, draw, max_lines=2):
-    lines, cur = [], ""
-    for ch in text:
-        if ch == "\n":
-            lines.append(cur)
-            cur = ""
-            continue
-        trial = cur + ch
-        if draw.textlength(trial, font=font) <= max_w:
-            cur = trial
-        else:
-            lines.append(cur)
-            cur = ch
-    if cur:
-        lines.append(cur)
-    return lines[:max_lines]
 
 
 def detect_host():
@@ -1124,7 +1223,10 @@ def _draw_footer(d, s, info):
     # model (left) + context % (right), above the bar
     pct_str = "{}%".format(pct)
     model_str = info.get("model", "-")
-    d.text((16, 182), model_str, font=_font(13, True), fill=(215, 215, 215), anchor="lm")
+    fmodel = _font(13, True, cjk=True)   # user/host-derived text; CJK-safe
+    while model_str and d.textlength(model_str, font=fmodel) > 160:  # 16..176, pct lives right
+        model_str = model_str[:-1]
+    d.text((16, 182), model_str, font=fmodel, fill=(215, 215, 215), anchor="lm")
     d.text((224, 182), pct_str, font=_font(14, True), fill=tier_color, anchor="rm")
 
     # divider capping the whole metrics block
@@ -1281,8 +1383,17 @@ def render_gif(state, sub=None, info=None, char_path=None, layout="frame", out=T
 
 # ---------------------------------------------------------------- push / lifecycle
 def _trim(text, n=40):
+    """Trim to n display columns (CJK wide chars = 2), not raw char count,
+    so a wide-char subtitle cannot overflow the 240px canvas."""
     text = " ".join((text or "").split())
-    return text if len(text) <= n else text[: n - 1] + "…"
+    if _dispw(text) <= n:
+        return text
+    out = ""
+    for ch in text:
+        if _dispw(out + ch) > n - 1:   # reserve one column for the ellipsis
+            break
+        out += ch
+    return out + "…"
 
 
 def _last_pushed():
