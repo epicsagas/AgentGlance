@@ -9,8 +9,7 @@
             "command": "AG=\"${GROK_PLUGIN_ROOT:-$CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py\"; test -f \"$AG\" && python3 \"$AG\" || true",
             "timeout": 10
           }
-        ],
-        "description": "Show working state on the SmallTV when a prompt is submitted"
+        ]
       }
     ],
     "Notification": [
@@ -22,8 +21,7 @@
             "command": "AG=\"${GROK_PLUGIN_ROOT:-$CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py\"; test -f \"$AG\" && python3 \"$AG\" || true",
             "timeout": 10
           }
-        ],
-        "description": "Show approval-needed state on the SmallTV"
+        ]
       }
     ],
     "Stop": [
@@ -35,8 +33,7 @@
             "command": "AG=\"${GROK_PLUGIN_ROOT:-$CLAUDE_PLUGIN_ROOT}/scripts/agent_glance.py\"; test -f \"$AG\" && python3 \"$AG\" || true",
             "timeout": 10
           }
-        ],
-        "description": "Show done state on the SmallTV when the turn ends"
+        ]
       }
     ]
   }
