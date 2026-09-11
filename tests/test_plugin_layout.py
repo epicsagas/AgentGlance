@@ -42,14 +42,19 @@ class GrokManifestTest(unittest.TestCase):
         self.assertNotIn("components", self.manifest, "grok reads flat keys, not a components object")
         self.assertEqual(self.manifest.get("skills"), "./skills/")
 
-    def test_hooks_point_at_the_single_hook_file(self):
-        self.assertEqual(self.manifest.get("hooks"), "./hooks/hooks.json")
-        self.assertTrue((ROOT / "hooks" / "hooks.json").is_file())
+    def test_hooks_declared_in_winning_manifest(self):
+        # grok reads ONE manifest - root plugin.json wins over
+        # .grok-plugin/plugin.json (measured 1.0.13) - and honors its hooks key
+        root = load("plugin.json")
+        self.assertEqual(root.get("hooks"), "./.grok-plugin/hooks.json")
+        self.assertTrue((ROOT / ".grok-plugin" / "hooks.json").is_file())
 
-    def test_no_duplicate_hooks_copy(self):
+    def test_no_shared_root_hook_file(self):
+        # root hooks/hooks.json is auto-scanned by grok and is the claude/codex
+        # default - shipping it double-loads the hooks
         self.assertFalse(
-            (ROOT / ".grok-plugin" / "hooks.json").exists(),
-            "hooks live at hooks/hooks.json only; a copy here is never read",
+            (ROOT / "hooks" / "hooks.json").exists(),
+            "root hooks/hooks.json double-loads; grok hooks live in .grok-plugin/",
         )
 
 
