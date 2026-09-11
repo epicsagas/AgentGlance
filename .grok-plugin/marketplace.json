@@ -12,7 +12,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/epicsagas/AgentGlance.git",
-        "sha": "d301a127a07018abdfb3f9cd73aa12ca0941b109"
+        "sha": "895d940e4f55790c0f9e4531f4ea290c36495304"
       },
       "homepage": "https://github.com/epicsagas/AgentGlance",
       "keywords": [
@@ -22,7 +22,8 @@
         "esp8266",
         "hooks",
         "display"
-      ]
+      ],
+      "version": "0.3.1"
     }
   ]
 }
