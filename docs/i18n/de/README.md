@@ -70,7 +70,7 @@ Eigenständige Installation aus diesem Repository — bringt den gleichnamigen `
 
 ```bash
 grok plugin marketplace add epicsagas/AgentGlance
-grok plugin install epicsagas/AgentGlance --trust
+grok plugin install agent-glance@agent-glance --trust
 ```
 
 **Claude Code**
