@@ -70,7 +70,7 @@ Eigenständige Installation aus diesem Repository — bringt den gleichnamigen `
 
 ```bash
 grok plugin marketplace add epicsagas/AgentGlance
-grok plugin install agent-glance@AgentGlance --trust
+grok plugin install agent-glance --trust
 ```
 
 **Claude Code**
@@ -268,7 +268,7 @@ host lifecycle hook (JSON on stdin)
 
 ## Multi-Host-Hooks
 
-Die drei Hosts teilen sich **kein** gemeinsames Hook-Format, daher hat jeder seine eigene Datei. Es gibt absichtlich kein generisches `hooks/hooks.json` — dieser Pfad ist der Standard sowohl für Claude Code als auch für Codex, und würde man eine Datei dort belassen, würde der falsche Host sie laden.
+Die drei Hosts teilen sich **kein** gemeinsames Hook-Format, daher hat jeder seine eigene Datei. Es gibt absichtlich kein generisches `.grok-plugin/hooks.json` — dieser Pfad ist der Standard sowohl für Claude Code als auch für Codex, und würde man eine Datei dort belassen, würde der falsche Host sie laden.
 
 | Host | Hook file | Why there |
 |---|---|---|

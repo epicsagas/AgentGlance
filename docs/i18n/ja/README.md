@@ -70,7 +70,7 @@
 
 ```bash
 grok plugin marketplace add epicsagas/AgentGlance
-grok plugin install agent-glance@AgentGlance --trust
+grok plugin install agent-glance --trust
 ```
 
 **Claude Code**
@@ -252,7 +252,7 @@ host lifecycle hook (JSON on stdin)
 
 ## マルチホストフック
 
-3つのホストはフック形式を共有して **いない** ため、それぞれ専用のファイルを持ちます。汎用の `hooks/hooks.json` があえて存在しないのは、そのパスが Claude Code と Codex *両方* のデフォルトであり、そのまま置いてしまうと意図しないホストに読み込まれてしまうからです。
+3つのホストはフック形式を共有して **いない** ため、それぞれ専用のファイルを持ちます。汎用の `.grok-plugin/hooks.json` があえて存在しないのは、そのパスが Claude Code と Codex *両方* のデフォルトであり、そのまま置いてしまうと意図しないホストに読み込まれてしまうからです。
 
 | Host | Hook file | Why there |
 |---|---|---|

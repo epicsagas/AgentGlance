@@ -73,10 +73,10 @@ Standalone install from this repository — it ships its own `agent-glance` mark
 
 ```bash
 grok plugin marketplace add epicsagas/AgentGlance
-grok plugin install agent-glance@AgentGlance --trust
+grok plugin install agent-glance --trust
 ```
 
-The first line registers this repo's standalone marketplace (browse with `/marketplace`, keep current with `grok plugin update`); the install line alone also works as a direct install. Grok reads skills and commands from the plugin root; live status hooks load from `hooks/hooks.json` (UserPromptSubmit / Notification / Stop).
+The first line registers this repo's standalone marketplace (browse with `/marketplace`, keep current with `grok plugin update`); the install line alone also works as a direct install. Grok reads skills and commands from the plugin root; live status hooks load from `.grok-plugin/hooks.json` (UserPromptSubmit / Notification / Stop).
 
 **Claude Code**
 
@@ -279,7 +279,7 @@ host lifecycle hook (JSON on stdin)
 
 ## Multi-host hooks
 
-The three hosts do **not** share a hook format, so each gets its own file. There is deliberately no generic `hooks/hooks.json` — that path is the default for *both* Claude Code and Codex, and leaving one there means the wrong host loads it.
+The three hosts do **not** share a hook format, so each gets its own file. There is deliberately no generic `.grok-plugin/hooks.json` — that path is the default for *both* Claude Code and Codex, and leaving one there means the wrong host loads it.
 
 | Host | Hook file | Why there |
 |---|---|---|

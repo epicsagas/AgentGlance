@@ -70,7 +70,7 @@
 
 ```bash
 grok plugin marketplace add epicsagas/AgentGlance
-grok plugin install agent-glance@AgentGlance --trust
+grok plugin install agent-glance --trust
 ```
 
 **Claude Code**
@@ -252,7 +252,7 @@ host lifecycle hook (JSON on stdin)
 
 ## 多主機掛鉤
 
-三個主機平台**並未共用**同一套掛鉤格式,因此各自使用獨立的檔案。之所以刻意不放置通用的 `hooks/hooks.json`,是因為該路徑同時是 Claude Code 與 Codex 的預設路徑,留在那裡會導致錯誤的主機載入它。
+三個主機平台**並未共用**同一套掛鉤格式,因此各自使用獨立的檔案。之所以刻意不放置通用的 `.grok-plugin/hooks.json`,是因為該路徑同時是 Claude Code 與 Codex 的預設路徑,留在那裡會導致錯誤的主機載入它。
 
 | Host | Hook file | Why there |
 |---|---|---|

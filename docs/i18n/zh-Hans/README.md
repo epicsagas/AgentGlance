@@ -70,7 +70,7 @@
 
 ```bash
 grok plugin marketplace add epicsagas/AgentGlance
-grok plugin install agent-glance@AgentGlance --trust
+grok plugin install agent-glance --trust
 ```
 
 **Claude Code**
@@ -252,7 +252,7 @@ host lifecycle hook (JSON on stdin)
 
 ## 多宿主钩子
 
-三个宿主平台**并不共用**同一套钩子格式,因此各自使用独立的文件。之所以刻意不放置通用的 `hooks/hooks.json`,是因为该路径同时是 Claude Code 和 Codex 的默认路径,留在那里会导致错误的宿主加载它。
+三个宿主平台**并不共用**同一套钩子格式,因此各自使用独立的文件。之所以刻意不放置通用的 `.grok-plugin/hooks.json`,是因为该路径同时是 Claude Code 和 Codex 的默认路径,留在那里会导致错误的宿主加载它。
 
 | Host | Hook file | Why there |
 |---|---|---|

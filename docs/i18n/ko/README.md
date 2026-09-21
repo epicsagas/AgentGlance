@@ -70,7 +70,7 @@
 
 ```bash
 grok plugin marketplace add epicsagas/AgentGlance
-grok plugin install agent-glance@AgentGlance --trust
+grok plugin install agent-glance --trust
 ```
 
 **Claude Code**
@@ -268,7 +268,7 @@ host lifecycle hook (JSON on stdin)
 
 ## 멀티호스트 훅
 
-세 호스트는 훅 형식을 공유하지 **않으므로** 각각 별도의 파일을 사용합니다. 공용 `hooks/hooks.json`이 의도적으로 존재하지 않는 이유는 — 그 경로가 Claude Code와 Codex *모두*의 기본 경로라서, 그대로 두면 엉뚱한 호스트가 그 파일을 읽어버리기 때문입니다.
+세 호스트는 훅 형식을 공유하지 **않으므로** 각각 별도의 파일을 사용합니다. 공용 `.grok-plugin/hooks.json`이 의도적으로 존재하지 않는 이유는 — 그 경로가 Claude Code와 Codex *모두*의 기본 경로라서, 그대로 두면 엉뚱한 호스트가 그 파일을 읽어버리기 때문입니다.
 
 | Host | Hook file | Why there |
 |---|---|---|
