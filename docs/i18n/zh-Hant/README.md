@@ -70,7 +70,7 @@
 
 ```bash
 grok plugin marketplace add epicsagas/AgentGlance
-grok plugin install agent-glance@agent-glance --trust
+grok plugin install agent-glance@AgentGlance --trust
 ```
 
 **Claude Code**
