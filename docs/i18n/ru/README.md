@@ -80,6 +80,8 @@ claude plugin marketplace add epicsagas/AgentGlance
 claude plugin install agent-glance@agent-glance
 ```
 
+> Маркетплейс регистрируется под именем `agent-glance` (поле `name` в `.claude-plugin/marketplace.json`), а не под именем репозитория. Если старая версия CLI зарегистрировала его как `AgentGlance`, сначала удалите эту запись командой `claude plugin marketplace remove AgentGlance`, затем снова выполните две команды выше.
+
 **Codex**
 
 ```bash

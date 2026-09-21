@@ -80,6 +80,8 @@ claude plugin marketplace add epicsagas/AgentGlance
 claude plugin install agent-glance@agent-glance
 ```
 
+> 마켓플레이스는 저장소 이름이 아니라 `.claude-plugin/marketplace.json`의 `name` 필드 값인 `agent-glance`로 등록됩니다. 예전 CLI로 등록해 `AgentGlance`라는 이름으로 남아 있다면 먼저 `claude plugin marketplace remove AgentGlance`로 제거한 뒤 위 두 명령을 다시 실행하세요.
+
 **Codex**
 
 ```bash

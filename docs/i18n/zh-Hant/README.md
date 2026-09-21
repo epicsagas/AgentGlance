@@ -80,6 +80,8 @@ claude plugin marketplace add epicsagas/AgentGlance
 claude plugin install agent-glance@agent-glance
 ```
 
+> 市集註冊名稱來自 `.claude-plugin/marketplace.json` 的 `name` 欄位(`agent-glance`),而非儲存庫名稱。若先前以舊版 CLI 註冊後殘留了 `AgentGlance` 名稱,請先執行 `claude plugin marketplace remove AgentGlance` 移除,再重新執行上面兩條命令。
+
 **Codex**
 
 ```bash
