@@ -23,7 +23,14 @@ Driven by Claude Code hooks (reads the hook JSON object from stdin).
 import sys, os, json, time, mimetypes, uuid, subprocess, glob, re, math, shutil, hashlib, unicodedata
 import urllib.request, urllib.parse, urllib.error
 from contextlib import contextmanager
-from PIL import Image, ImageDraw, ImageFont
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError:
+    sys.stderr.write(
+        "agent-glance: Pillow missing - run: python3 -m pip install Pillow "
+        "(SmallTV display skipped this turn)\n"
+    )
+    sys.exit(1)
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # Persistent state lives in a stable user dir (NOT the install/plugin dir,
